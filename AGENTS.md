@@ -2,7 +2,7 @@
 
 ## Project status
 
-`pi-workflow` is in planning. `PLAN.md` is the active implementation plan and `IDEAS.md` contains explicitly deferred directions.
+The `pi-workflow` planning baseline is complete and implementation has not started. `PLAN.md` is the active implementation plan, Phase 1 is next, and `IDEAS.md` contains explicitly deferred directions.
 
 Do not implement deferred ideas as part of V1. Resolve the interagent feasibility gate in `PLAN.md` before selecting the runtime state design.
 

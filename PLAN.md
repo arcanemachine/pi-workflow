@@ -1,6 +1,6 @@
 # pi-workflow V1 implementation plan
 
-Status: Approved direction; implementation has not started.
+Status: Planning baseline complete; implementation has not started. Phase 1 is the next implementation phase.
 
 ## Purpose
 
@@ -331,7 +331,7 @@ The superproject must:
 
 ## Implementation sequence
 
-### Phase 0 — Planning baseline
+### Phase 0 — Planning baseline (complete)
 
 Deliverables:
 
