@@ -2,9 +2,9 @@
 
 ## Project status
 
-The `pi-workflow` planning baseline is complete and implementation has not started. `PLAN.md` is the active implementation plan, Phase 1 is next, and `IDEAS.md` contains explicitly deferred directions.
+The `pi-workflow` architecture investigation is complete and implementation has not started. `PLAN.md` is the active implementation plan, Phase 2 is next, and `IDEAS.md` contains explicitly deferred directions.
 
-Do not implement deferred ideas as part of V1. Resolve the interagent feasibility gate in `PLAN.md` before selecting the runtime state design.
+Do not implement deferred ideas as part of V1. Preserve the resolved SQLite state and interagent handoff boundaries in `PLAN.md`.
 
 ## Package boundaries
 
@@ -12,6 +12,8 @@ Do not implement deferred ideas as part of V1. Resolve the interagent feasibilit
 - Keep workflow lifecycle mechanics separate from role identity and project-specific product guidance.
 - `pi-role` remains optional and independently usable.
 - Interagent is the only planned V1 coordination transport; do not add alternate transports without user approval.
+- Keep authoritative V1 state in the `pi-workflow`-owned `node:sqlite` store under the user-state directory, never in project runtime files or Pi session entries.
+- Require Node.js 24.16.0 or newer and isolate `node:sqlite` usage behind one focused storage module.
 - Keep the FSM coarse-grained. Ordinary Sergeant-to-Worker execution loops are not FSM transitions.
 - Do not ship Practorium-specific product instructions as generic workflow behavior.
 

@@ -1,6 +1,6 @@
 # pi-workflow V1 implementation plan
 
-Status: Planning baseline complete; implementation has not started. Phase 1 is the next implementation phase.
+Status: Architecture investigation complete; implementation has not started. Phase 2 is the next implementation phase.
 
 ## Purpose
 
@@ -269,24 +269,33 @@ When a legal transition changes top-level ownership, `pi-workflow` should:
 
 Ordinary Sergeant-to-Worker dispatch and Worker-to-Sergeant reporting during `executing` remain direct interagent workflow activity, not lifecycle transitions.
 
-## Interagent feasibility gate
+## Interagent feasibility gate (resolved)
 
-Do not select or implement the runtime store until this gate is complete.
+The source and protocol investigation established:
 
-Investigate the actual interagent client/server implementation and verify:
+- interagent provides importable programmatic direct-send, custom-message, and session-list operations outside LLM tool calls;
+- targeted custom messages can carry opaque structured JSON, but the current Pi integration reduces incoming custom frames to text and must preserve their custom type and payload for workflow handoffs;
+- the server stores only live connections, channels, and subscriptions in memory; it has no namespaced extension state, durable history, message retention, or revision-check facility;
+- server restart clears bus state and undelivered messages; the persistent data directory currently contains authentication and TLS material, not application state;
+- active routing names and session IDs are server-global, concurrent collisions are rejected, disconnected identities can reconnect, and listing exposes concrete names, session IDs, and labels;
+- target resolution prefers an exact name but falls back to a unique prefix, so workflow handoffs require exact-target behavior rather than relying on ordinary prefix resolution;
+- the Pi listener can reconnect, inject an incoming message into Pi, trigger a turn, and allow `before_agent_start` to refresh workflow context;
+- `pi-role` keeps its live role in a private extension closure and persists versioned session entries; optional integration therefore needs a stable effective-role entry contract rather than a shared mutable runtime API.
 
-- whether extensions have a programmatic direct-send API outside LLM tool calls;
-- whether the server supports namespaced extension state or a durable event/history facility;
-- server restart and message retention semantics;
-- concurrent update and revision-check support;
-- endpoint registration, collision, disconnect, and reconnect behavior;
-- whether a small workflow namespace can be added without embedding workflow policy in interagent;
-- how a recipient extension can receive a structured handoff and refresh Pi context;
-- how concrete project-role identities are configured and enumerated.
+The interagent server will remain the V1 direct-handoff transport, but it will not become the workflow state backend. Adding a generic durable interagent state protocol would impose cross-repository protocol, persistence, compatibility, and release costs without another demonstrated consumer.
 
-Preferred outcome: reuse the existing interagent server for shared workflow instance state and direct delivery, avoiding project runtime files and a second server.
+V1 authoritative state will instead use a `pi-workflow`-owned SQLite database in the platform user-state directory:
 
-If the existing server cannot support durable, authoritative shared lifecycle state with a small coherent change, stop and return to the user with evidence and options. Do not silently add a filesystem store, second daemon, or session-local authority.
+- no runtime state files are written into project repositories;
+- no second daemon is introduced;
+- all participating V1 Pi processes must share the same user-state filesystem;
+- current records and transition history are committed atomically with expected-revision checks;
+- short transactions and a nonzero busy timeout provide bounded multi-process contention handling;
+- built-in `node:sqlite` is used through one focused storage module, with no ORM or native npm dependency;
+- Node.js 24.16.0 is the minimum runtime baseline; its `node:sqlite` API is Stability 1.2 (release candidate), and the minimum version must be exercised in CI;
+- separate machines, isolated containers or home directories, and other environments without shared state storage remain outside V1.
+
+Handoff messages remain notifications to consult authoritative state, not lifecycle authority themselves. A transition is recorded before delivery; delivery success, pending status, or failure is tracked separately so retry never duplicates the lifecycle transition.
 
 ## Package and repository shape
 
@@ -315,7 +324,7 @@ Package requirements:
 - `pi.extensions` package manifest entry;
 - independently declared runtime dependencies;
 - Pi-provided packages as optional peer dependencies;
-- Node engine and publication metadata aligned with maintained siblings;
+- Node engine set to `>=24.16.0` for the approved built-in `node:sqlite` baseline, with other publication metadata aligned with maintained siblings;
 - TypeScript build/typecheck, Vitest, and Prettier scripts aligned with siblings;
 - source, README, changelog, and license included in the tarball;
 - no bundled roles or Practorium-specific product instructions;
@@ -343,7 +352,7 @@ Deliverables:
 
 Completion condition: the package exists as a clean planning repository with no sample runtime behavior and all repositories have coherent commits.
 
-### Phase 1 — Interagent and role integration investigation
+### Phase 1 — Interagent and role integration investigation (complete)
 
 Deliverables:
 
@@ -438,7 +447,7 @@ Test:
 - legal and illegal transitions;
 - actor role and participant-slot eligibility;
 - distinct approval evidence;
-- stale revisions and concurrent attempts;
+- stale revisions and concurrent attempts, including contention between separate Node processes on the SQLite store;
 - correction and user-override transitions;
 - workspace registry path normalization and overlap;
 - project-role participant binding;
