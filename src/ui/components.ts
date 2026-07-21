@@ -16,6 +16,7 @@ export async function showSelection(
   ctx: ExtensionCommandContext,
   title: string,
   items: SelectItem[],
+  cancelLabel = "cancel",
 ): Promise<string | null> {
   return ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
     const container = new Container();
@@ -39,7 +40,7 @@ export async function showSelection(
     container.addChild(list);
     container.addChild(
       new Text(
-        theme.fg("dim", "↑↓ navigate • enter select • esc cancel"),
+        theme.fg("dim", `↑↓ navigate • enter select • esc ${cancelLabel}`),
         1,
         0,
       ),
@@ -90,10 +91,20 @@ export async function showWorkflowToggles(
       new DynamicBorder((text: string) => theme.fg("accent", text)),
     );
     container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
+    const settingsTheme = getSettingsListTheme();
     const settings = new SettingsList(
       items,
       Math.min(Math.max(items.length + 2, 3), 15),
-      getSettingsListTheme(),
+      {
+        ...settingsTheme,
+        hint: (text) =>
+          settingsTheme.hint(
+            text.replace(
+              "Esc to cancel",
+              "Esc back; changes stay staged until saved",
+            ),
+          ),
+      },
       (id, value) => {
         if (value === "on") selected.add(id);
         else selected.delete(id);

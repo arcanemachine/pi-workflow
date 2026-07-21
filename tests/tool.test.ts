@@ -53,7 +53,7 @@ describe("pi_workflow registration", () => {
     expect(registered?.promptGuidelines).toEqual([
       ...WORKFLOW_PROMPT_GUIDELINES,
     ]);
-    expect(registered?.promptGuidelines).toHaveLength(16);
+    expect(registered?.promptGuidelines).toHaveLength(19);
     expect(
       registered?.promptGuidelines?.every((guideline) =>
         guideline.includes("pi_workflow"),
@@ -72,6 +72,9 @@ describe("pi_workflow registration", () => {
     expect(guidance).toMatch(/Workers/);
     expect(guidance).toMatch(/only the user-operated \/workflows/);
     expect(guidance).toMatch(/CATALOG_TOO_LARGE/);
+    expect(guidance).toMatch(/active role from your own role instructions/);
+    expect(guidance).toMatch(/coordination context, not candidates/);
+    expect(guidance).toMatch(/behavioral contract enforced by guidance/);
   });
 });
 
@@ -92,7 +95,7 @@ describe("pi_workflow actions", () => {
         demo: {
           roles: {
             architect: ["bounded-work", "missing"],
-            sergeant: ["invalid"],
+            sergeant: ["bounded-work", "invalid"],
           },
         },
       },
@@ -102,12 +105,17 @@ describe("pi_workflow actions", () => {
       executeWorkflowTool({ action: "list", project: "demo" }, paths),
     );
 
-    expect(output).toContain("Role: architect");
-    expect(output).toContain("bounded-work: Bounded work");
+    expect(output).toContain("Workflows:");
+    expect(output.match(/bounded-work: Bounded work/g)).toHaveLength(1);
+    expect(output).toContain("workflow-managing roles: architect");
     expect(output).toContain("missing [missing]");
-    expect(output).toContain("Role: sergeant [unavailable]");
+    expect(output).toContain("Project availability by managing role:");
+    expect(output).toContain("- architect: bounded-work, missing");
+    expect(output).toContain("- sergeant [unavailable]: bounded-work, invalid");
     expect(output).toContain("invalid [invalid: INVALID_WORKFLOW]");
     expect(output).not.toContain("unconfigured");
+    expect(output).toMatch(/routes: \(none\)\n\n  invalid \[invalid:/);
+    expect(output).toMatch(/INVALID_WORKFLOW\]\n\n  missing \[missing\]/);
   });
 
   it("lists global metadata and invalid diagnostics without workflow bodies", () => {
@@ -120,6 +128,7 @@ describe("pi_workflow actions", () => {
     expect(output).toContain("bounded-work: Bounded work");
     expect(output).toContain("invalid [invalid:");
     expect(output).not.toContain("Follow the instructions");
+    expect(output).toMatch(/routes: \(none\)\n\ninvalid \[invalid:/);
   });
 
   it("reads complete metadata without body and reads complete raw Markdown", () => {

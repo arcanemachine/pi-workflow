@@ -4,6 +4,8 @@ import type {
   ExtensionAPI,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { keyText } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
   MAX_RENDERED_RESULT_BYTES,
@@ -47,6 +49,9 @@ export const WORKFLOW_PROMPT_GUIDELINES = [
   "Never add, remove, or edit project workflow assignments with pi_workflow or general file-mutation tools; only the user-operated /workflows command may change projects.json.",
   "Treat pi_workflow unavailable-role and missing-workflow markers as diagnostics, not permission to rewrite configuration.",
   "If pi_workflow returns CATALOG_TOO_LARGE, stop selection, explain that bulk comparison is impossible, and ask the user to reduce the project workflow list with /workflows; do not inspect workflows one by one.",
+  "Determine your active role from your own role instructions, not from pi_workflow; then recommend only workflows assigned to that role in the pi_workflow project list.",
+  "Workflows assigned to other managing roles in the pi_workflow project list are coordination context, not candidates for your active role; describe them only when the user asks about them.",
+  "This role-based selection is a behavioral contract enforced by guidance, not by pi_workflow; the tool does not query or depend on any role extension.",
 ] as const;
 
 export const WorkflowToolParameters = Type.Object({
@@ -82,6 +87,24 @@ function truncateUtf8(text: string, maximumBytes: number): string {
 
 function displayId(id: string): string {
   return id.length <= 160 ? id : `${id.slice(0, 157)}…`;
+}
+
+function renderSummary(args: WorkflowToolParams, isError: boolean): string {
+  if (isError) return "pi_workflow error";
+  switch (args.action) {
+    case "list":
+      return args.project
+        ? `List workflows for ${args.project}`
+        : "List project workflows";
+    case "list_global":
+      return "List global workflows";
+    case "read_metadata":
+      return args.workflow
+        ? `Read metadata: ${args.workflow}`
+        : "Read workflow metadata";
+    case "read":
+      return args.workflow ? `Read ${args.workflow}` : "Read workflow";
+  }
 }
 
 function result(
@@ -161,7 +184,7 @@ function metadataLines(
   return [
     `${indent}${workflow.id}: ${metadata.title}`,
     `${indent}  summary: ${metadata.summary}`,
-    `${indent}  managing roles: ${metadata.managing_roles.join(", ")}`,
+    `${indent}  workflow-managing roles: ${metadata.managing_roles.join(", ")}`,
     `${indent}  use when: ${metadata.use_when.join(" | ")}`,
     `${indent}  avoid when: ${metadata.avoid_when.join(" | ")}`,
     `${indent}  routes: ${metadata.routing ? Object.keys(metadata.routing).sort().join(", ") : "(none)"}`,
@@ -185,9 +208,15 @@ function listProject(
   paths: WorkflowPaths,
 ): WorkflowToolResult {
   const project = configuredProject(paths, projectId);
-  const workflowIds = [
-    ...new Set(Object.values(project.roles).flat()),
-  ].sort();
+  const workflowRoles = new Map<string, string[]>();
+  for (const [roleId, assignedIds] of Object.entries(project.roles)) {
+    for (const workflowId of assignedIds) {
+      const assignedRoles = workflowRoles.get(workflowId) ?? [];
+      assignedRoles.push(roleId);
+      workflowRoles.set(workflowId, assignedRoles);
+    }
+  }
+  const workflowIds = [...workflowRoles.keys()].sort();
   const catalog = discoverWorkflowCatalog(paths.workflowDir, workflowIds);
   const roles = discoverGlobalRoleFilenames(paths.rolesDir);
   const availableRoles = new Set(roles.roleIds);
@@ -198,10 +227,11 @@ function listProject(
     lines.push(
       "(empty — the user can configure this project workflow list with /workflows)",
     );
-  }
-  for (const roleId of roleIds) {
-    lines.push("", `Role: ${roleId}${availableRoles.has(roleId) ? "" : " [unavailable]"}`);
-    for (const workflowId of [...project.roles[roleId]].sort()) {
+  } else {
+    lines.push("", "Workflows:");
+    for (let index = 0; index < workflowIds.length; index++) {
+      if (index > 0) lines.push("");
+      const workflowId = workflowIds[index];
       const entry = findCatalogEntry(catalog, workflowId);
       if (!entry) {
         lines.push(`  ${workflowId} [missing]`);
@@ -211,6 +241,14 @@ function listProject(
       } else {
         lines.push(...metadataLines(entry.workflow, "  "));
       }
+    }
+
+    lines.push("", "Project availability by managing role:");
+    for (const roleId of roleIds) {
+      const assignments = [...project.roles[roleId]].sort();
+      lines.push(
+        `- ${roleId}${availableRoles.has(roleId) ? "" : " [unavailable]"}: ${assignments.length === 0 ? "(none)" : assignments.join(", ")}`,
+      );
     }
   }
 
@@ -222,7 +260,9 @@ function listGlobal(paths: WorkflowPaths): WorkflowToolResult {
   const catalog = discoverWorkflowCatalog(paths.workflowDir);
   const lines = ["Global workflow catalog:"];
   if (catalog.entries.length === 0) lines.push("(empty)");
-  for (const entry of catalog.entries) {
+  for (let index = 0; index < catalog.entries.length; index++) {
+    if (index > 0) lines.push("");
+    const entry = catalog.entries[index];
     if (entry.workflow) {
       lines.push(...metadataLines(entry.workflow, ""));
     } else {
@@ -342,6 +382,22 @@ export function createWorkflowTool(
     parameters: WorkflowToolParameters,
     async execute(_toolCallId, params) {
       return executeWorkflowTool(params, pathsProvider());
+    },
+    renderCall(args, theme, context) {
+      const summary = `${theme.fg("toolTitle", theme.bold("pi_workflow"))} ${theme.fg("accent", renderSummary(args, false))}`;
+      const hint = context.expanded
+        ? ""
+        : theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`);
+      return new Text(`${summary}${hint}`, 0, 0);
+    },
+    renderResult(result, options, theme, _context) {
+      if (!options.expanded) {
+        return new Text("", 0, 0);
+      }
+      const content = result.content[0];
+      const body =
+        content && content.type === "text" ? content.text : "";
+      return new Text(`\n${theme.fg("toolOutput", body)}`, 0, 0);
     },
   };
 }

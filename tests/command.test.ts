@@ -133,10 +133,9 @@ describe("workflow configurator", () => {
       context,
       paths,
       scriptedUI({
-        selections: ["__add-project__", "__add-role__"],
+        selections: ["__add-project__", "__add-role__", null, "save"],
         inputs: ["demo", "architect"],
         selected: ["bounded-work"],
-        confirm: true,
       }),
     );
 
@@ -166,9 +165,8 @@ describe("workflow configurator", () => {
     let roleItems: string[] = [];
 
     const ui = scriptedUI({
-      selections: ["demo", "architect"],
+      selections: ["demo", "architect", null, "discard"],
       selected: ["valid"],
-      confirm: false,
       inspectToggles(items) {
         expect(items.map((item) => item.label)).toEqual([
           "invalid [invalid]",
@@ -190,6 +188,104 @@ describe("workflow configurator", () => {
     expect(readFileSync(paths.projectsFile, "utf8")).toBe(
       JSON.stringify(projects),
     );
+  });
+
+  it("opens a save-before-exit confirmation on Esc with staged changes and discards when chosen", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: {
+        demo: { roles: { architect: ["bounded-work"] } },
+      },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+    const ui = scriptedUI({
+      selections: ["demo", "architect", null, null, "discard"],
+      selected: [],
+    });
+    const titles: string[] = [];
+    const originalSelect = ui.select;
+    ui.select = async (title, items, cancelLabel) => {
+      titles.push(title);
+      return originalSelect(title, items, cancelLabel);
+    };
+
+    await configureProjectWorkflows(context, paths, ui);
+
+    expect(titles).toEqual([
+      "Select project",
+      "Select managing role for demo",
+      "Select managing role for demo",
+      "Select project",
+      "Save staged workflow-list changes before exiting?",
+    ]);
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(
+      JSON.stringify(projects),
+    );
+  });
+
+  it("returns to the project menu when Esc cancels the save-before-exit confirmation", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: {
+        demo: { roles: { architect: ["bounded-work"] } },
+      },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+    const ui = scriptedUI({
+      selections: ["demo", "architect", null, null, null, "discard"],
+      selected: [],
+    });
+    const titles: string[] = [];
+    const originalSelect = ui.select;
+    ui.select = async (title, items, cancelLabel) => {
+      titles.push(title);
+      return originalSelect(title, items, cancelLabel);
+    };
+
+    await configureProjectWorkflows(context, paths, ui);
+
+    expect(titles).toEqual([
+      "Select project",
+      "Select managing role for demo",
+      "Select managing role for demo",
+      "Select project",
+      "Save staged workflow-list changes before exiting?",
+      "Select project",
+      "Save staged workflow-list changes before exiting?",
+    ]);
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(
+      JSON.stringify(projects),
+    );
+  });
+
+  it("moves Escape from the role menu back to project selection", async () => {
+    const paths = setup();
+    writeFileSync(
+      paths.projectsFile,
+      JSON.stringify({ version: 1, projects: { demo: { roles: {} } } }),
+    );
+    const { context } = fakeContext();
+    const ui = scriptedUI({ selections: ["demo", null, null] });
+    const titles: string[] = [];
+    const originalSelect = ui.select;
+    ui.select = async (title, items, cancelLabel) => {
+      titles.push(title);
+      return originalSelect(title, items, cancelLabel);
+    };
+
+    await configureProjectWorkflows(context, paths, ui);
+
+    expect(titles).toEqual([
+      "Select project",
+      "Select managing role for demo",
+      "Select project",
+    ]);
   });
 
   it("does not overwrite invalid configuration", async () => {
