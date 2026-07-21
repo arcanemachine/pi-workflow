@@ -6,7 +6,7 @@
 
 The former FSM/SQLite/interagent design was abandoned and intentionally deleted. Do not recover it from Git history or reintroduce it during V1.
 
-Before implementation, the Architect must obtain explicit approval to use the recommended `full-phase` coordinated workflow. Then follow the task sequence and reading lists in `PLAN.md`.
+When the user explicitly authorizes implementation, one implementation agent follows Tasks 1 through 4 sequentially, reading each task's exact required sources before starting it. Do not create Architect/Sergeant/Worker routing for this implementation. Pause only for stated stop conditions or explicit user-facing acceptance gates.
 
 ## Product boundary
 

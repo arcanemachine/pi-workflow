@@ -4,26 +4,26 @@ Status: Product direction and V1 architecture are approved. Implementation has n
 
 ## Purpose of this plan
 
-This is the authoritative implementation recipe for a fresh Architect, Sergeant, or Worker. It records the approved product behavior, exact terminology, file contracts, package structure, task sequence, required reading, verification, acceptance gates, and stop conditions.
+This is the authoritative implementation recipe for one fresh implementation agent. It records the approved product behavior, exact terminology, file contracts, package structure, task sequence, required reading, verification, acceptance gates, and stop conditions.
 
 Do not reconstruct the former FSM architecture from Git history. Do not add lifecycle state, transition enforcement, SQLite, structured handoffs, or session attachment to V1.
 
-## Required first action
+## Execution protocol
 
-Implementation is not authorized by this document alone.
+When the user explicitly says to implement this plan, that authorizes one implementation agent to execute Tasks 1 through 4 sequentially. Do not ask the user to select a workflow, approve a route, approve a reading list, approve dispatch, or reauthorize each task.
 
-A fresh Architect must first recommend the `full-phase` workflow with the coordinated route because implementation contains multiple substantive tasks, introduces user-facing Pi behavior, and requires migration and live acceptance. Present this as the first standalone decision:
+For each task, the implementation agent must:
 
-> **1. Workflow approval:** Do you approve using `full-phase` with the coordinated route to implement `pi-workflow` V1?
+1. read only that task's required-reading list before starting the task;
+2. implement only the stated scope and allowed files;
+3. run the stated verification;
+4. correct failures within scope and rerun affected checks;
+5. commit the verified task when its completion rule permits it; and
+6. proceed directly to the next task.
 
-Wait for explicit approval. Do not combine that question with reading approval, implementation authorization, publishing, or another decision.
+The agent must stop only at a stated stop condition, an explicit user-facing acceptance gate, or an unresolved material decision. User-facing acceptance is the only routine pause: implement and verify the requested behavior, present the specified live demonstration, and wait for explicit user approval before committing or advancing that user-facing work.
 
-Workflow approval settles only workflow and route selection; it does not authorize reading or dispatch. After approval, present Task 1's exact required-reading list and ask separately for:
-
-1. approval of that reading batch; and
-2. authorization to dispatch and execute Task 1.
-
-Both must be explicit before dispatch. Repeat the same bounded reading-batch and execution-authorization gates before every later task; do not treat approval of the overall workflow as permission to read or execute all tasks at once. Then use the task sequence in this plan. Assign each substantive implementation task to a fresh Worker. The Sergeant reviews, verifies, obtains any required user acceptance, accepts, and commits each task before proposing the next. Do not push, publish, or release without separate explicit authorization.
+Do not delegate Tasks 1 through 4, invent Architect/Sergeant/Worker routing for this implementation, or require a separate workflow engine to execute this plan. Do not push, publish, or release without separate explicit authorization.
 
 ## Objective
 
@@ -636,7 +636,7 @@ User approval is required before committing user-facing behavior or completing m
 
 **Repository:** `/workspace/projects/pi/packages/pi-workflow`
 
-**Owner:** fresh Worker
+**Owner:** single implementation agent
 
 **Required reading:**
 
@@ -689,13 +689,13 @@ npm pack --dry-run
 
 Inspect the tarball file list. Run tests with temporary directories only.
 
-**Completion:** all deterministic core contracts pass without a running Pi session or real global catalog. Sergeant reviews, accepts, and commits the child repository task.
+**Completion:** all deterministic core contracts pass without a running Pi session or real global catalog. Commit the child repository task, then proceed to Task 2.
 
 ### Task 2 — Read-only agent tool, prompt guardrails, and `/workflow` UI
 
 **Repository:** `/workspace/projects/pi/packages/pi-workflow`
 
-**Owner:** a different fresh Worker
+**Owner:** single implementation agent
 
 **Required reading:**
 
@@ -732,7 +732,7 @@ Read the named Pi Markdown documentation completely and follow its directly rele
 
 **Deterministic verification:** run all package checks and dry-run packaging.
 
-**Live acceptance gate:** Sergeant creates a disposable absolute catalog directory with representative workflow and project fixtures, starts Pi with `PI_WORKFLOW_DIR=<absolute-temp-dir> pi -e ./src/index.ts`, prepares the live scenarios from **Live acceptance**, demonstrates them, and obtains explicit user approval. Remove the disposable directory afterward. Do not commit Task 2 before that approval. If the user requests corrections, return the same task to its Worker, rerun checks, and repeat acceptance.
+**Live acceptance gate:** Create a disposable absolute catalog directory with representative workflow and project fixtures, start Pi with `PI_WORKFLOW_DIR=<absolute-temp-dir> pi -e ./src/index.ts`, demonstrate the applicable scenarios from **Live acceptance**, and obtain explicit user approval. Remove the disposable directory afterward. Do not commit Task 2 or proceed to Task 3 before that approval. If the user requests corrections, implement them within Task 2, rerun checks, and repeat acceptance.
 
 **Completion:** user-approved tool and UI behavior are committed coherently in the child repository.
 
@@ -744,7 +744,7 @@ Read the named Pi Markdown documentation completely and follow its directly rele
 - `/workspace/projects/practorium` documentation and agent workflow material;
 - `pi-workflow` documentation only where migration reveals an in-scope correction.
 
-**Owner:** a different fresh Worker coordinated by the Sergeant
+**Owner:** single implementation agent
 
 **Required reading:**
 
@@ -778,7 +778,7 @@ Read the named Pi Markdown documentation completely and follow its directly rele
 - `/workspace/projects/practorium/package.json`;
 - this plan's **Workflow Markdown contract**, **Prompt-guidance contract**, and **Live acceptance** requirements.
 
-The Worker reads its matching supplement first during startup. This migration task then explicitly authorizes the Architect and Sergeant supplements only to identify and update their workflow-catalog references. The Sergeant follows its own startup and review rules separately.
+This task explicitly authorizes all three Practorium role supplements only to identify and update their workflow-catalog references. The implementation agent does not adopt or route through those project roles.
 
 **Implement:**
 
@@ -813,15 +813,15 @@ The Worker reads its matching supplement first during startup. This migration ta
 - verify each global workflow can be read only after the intended approval interaction;
 - run `git -C /workspace status --short` and `git check-ignore` for the created global catalog files; if those files are tracked by the workspace repository, commit only the approved catalog files there, and otherwise leave them as user configuration.
 
-**User acceptance gate:** demonstrate the migrated `/workflow` list, project tool listing, one workflow recommendation/approval/read sequence, and one Worker handoff that does not invoke workflow discovery. Obtain explicit user approval before deleting duplicated Practorium catalog files or committing user-facing migration.
+**User acceptance gate:** demonstrate the migrated `/workflow` list, project tool listing, one workflow recommendation/approval/read sequence, and one Worker handoff that does not invoke workflow discovery. Obtain explicit user approval before deleting duplicated Practorium catalog files, committing user-facing migration, or proceeding to Task 4.
 
-**Completion:** accepted global workflows and Practorium guidance have one clear catalog authority. Commit each repository coherently, child repositories before any parent pointers. Do not commit private runtime data or unrelated global agent files.
+**Completion:** accepted global workflows and Practorium guidance have one clear catalog authority. Commit each repository coherently, child repositories before any parent pointers, then proceed to Task 4. Do not commit private runtime data or unrelated global agent files.
 
 ### Task 4 — Documentation, superproject integration, and release readiness
 
 **Repositories:** `/workspace/projects/pi/packages/pi-workflow`, then `/workspace/projects/pi`
 
-**Owner:** a different fresh Worker
+**Owner:** single implementation agent
 
 **Required reading:**
 
