@@ -2,7 +2,7 @@
 
 A planned Pi extension for deterministic, role-aware workflow lifecycles with Markdown planning artifacts and direct interagent handoffs.
 
-The architecture investigation is complete; implementation has not started. See:
+The executable V1 plan is complete; implementation has not started. See:
 
 - [`PLAN.md`](./PLAN.md) for the approved V1 direction and implementation sequence.
 - [`IDEAS.md`](./IDEAS.md) for explicitly deferred possibilities.

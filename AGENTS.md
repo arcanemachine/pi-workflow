@@ -2,7 +2,7 @@
 
 ## Project status
 
-The `pi-workflow` architecture investigation is complete and implementation has not started. `PLAN.md` is the active implementation plan, Phase 2 is next, and `IDEAS.md` contains explicitly deferred directions.
+The executable `pi-workflow` V1 plan is complete and implementation has not started. `PLAN.md` is authoritative, Task 1 is next when the user authorizes implementation, and `IDEAS.md` contains explicitly deferred directions.
 
 Do not implement deferred ideas as part of V1. Preserve the resolved SQLite state and interagent handoff boundaries in `PLAN.md`.
 
