@@ -2,7 +2,7 @@
 
 ## Current status
 
-`pi-workflow` has an approved thin-catalog architecture and a complete implementation recipe in `PLAN.md`. Implementation has not started.
+`pi-workflow` has an approved thin-catalog architecture and a complete implementation recipe in `PLAN.md`. Implementation is in progress; use its progress checkpoint to resume at the exact next action.
 
 The former FSM/SQLite/interagent design was abandoned and intentionally deleted. Do not recover it from Git history or reintroduce it during V1.
 
@@ -16,7 +16,7 @@ It provides:
 
 - global workflow discovery from `join(getAgentDir(), "workflows")`;
 - central project workflow lists grouped by managing role;
-- one `/workflow` configuration command;
+- one `/workflows` configuration command;
 - one read-only `pi_workflow` tool;
 - prompt guardrails for project-first discovery and explicit workflow approval.
 
@@ -60,10 +60,10 @@ The exact tool and prompt behavior is specified in `PLAN.md`. Preserve these ess
 - do not inspect the global catalog without explicit user permission;
 - do not read full workflow Markdown before approval or a direct read request;
 - present workflow approval as the first standalone numbered decision;
-- do not let agents modify `projects.json` through any tool; only the user-operated `/workflow` command may change project workflow lists;
+- do not let agents modify `projects.json` through any tool; only the user-operated `/workflows` command may change project workflow lists;
 - do not make Workers select workflows when they only execute assigned work.
 
-`/workflow` is the only user command. It configures project workflow lists through Pi TUI components.
+`/workflows` is the only user command. It configures project workflow lists through Pi TUI components.
 
 ## Verification
 

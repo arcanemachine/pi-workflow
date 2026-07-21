@@ -172,7 +172,7 @@ export function saveProjectsFile(
   if (currentContent(path) !== expectedContent) {
     throw new WorkflowError(
       "CONFIG_CHANGED",
-      `${path} changed after it was opened; reopen /workflow and try again.`,
+      `${path} changed after it was opened; reopen /workflows and try again.`,
     );
   }
 

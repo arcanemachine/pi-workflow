@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
+import piWorkflow from "../src/index.js";
 
 describe("extension entrypoint", () => {
-  it("loads without filesystem side effects", async () => {
-    const extension = await import("../src/index.js");
-    expect(extension.default).toBeTypeOf("function");
-    expect(extension.default({} as never)).toBeUndefined();
+  it("registers exactly one tool and one command without other side effects", () => {
+    const tools: string[] = [];
+    const commands: string[] = [];
+
+    piWorkflow({
+      registerTool(tool: { name: string }) {
+        tools.push(tool.name);
+      },
+      registerCommand(name: string) {
+        commands.push(name);
+      },
+    } as never);
+
+    expect(tools).toEqual(["pi_workflow"]);
+    expect(commands).toEqual(["workflows"]);
   });
 });

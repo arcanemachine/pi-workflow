@@ -1,12 +1,12 @@
 # pi-workflow
 
-A planned thin workflow-catalog extension for [Pi](https://pi.dev).
+A thin workflow-catalog extension for [Pi](https://pi.dev).
 
-`pi-workflow` will let users maintain a central project workflow list grouped by managing role, while keeping complete workflow guidance in global Markdown files. Agents will be able to list project metadata in bulk, recommend an appropriate workflow, obtain explicit user approval, and then read only the selected workflow.
+`pi-workflow` lets users maintain a central project workflow list grouped by managing role, while keeping complete workflow guidance in global Markdown files. Agents can list project metadata in bulk, recommend an appropriate workflow, obtain explicit user approval, and then read only the selected workflow.
 
-Implementation has not started. [`PLAN.md`](./PLAN.md) is the authoritative V1 implementation recipe.
+Implementation is in progress. The deterministic core and accepted tool/TUI behavior are complete; migration, final documentation, and superproject integration remain. [`PLAN.md`](./PLAN.md) is the authoritative V1 implementation recipe and progress checkpoint.
 
-## Planned V1 model
+## V1 model
 
 Global workflows live under Pi's agent directory:
 
@@ -27,30 +27,30 @@ A workflow's filename stem is its ID:
 full-phase.md → full-phase
 ```
 
-Workflow frontmatter contains bulk selection metadata. The Markdown body contains the complete workflow guidance. The package will ship no workflow definitions.
+Workflow frontmatter contains bulk selection metadata. The Markdown body contains the complete workflow guidance. The package ships no workflow definitions.
 
 `projects.json` maps exact lowercase-kebab project IDs to workflow-managing roles and workflow IDs. It stores no project paths and no active workflow state.
 
-## Planned surfaces
+## Surfaces
 
 ### User command
 
 ```text
-/workflow
+/workflows
 ```
 
 The command opens a Pi TUI for selecting a project and role, then adding or removing workflows through a searchable on/off list.
 
 ### Agent tool
 
-One read-only `pi_workflow` tool will provide:
+One read-only `pi_workflow` tool provides:
 
 - `list` — all configured workflow metadata for one project, grouped by role;
 - `list_global` — all global workflow metadata, only after explicit user permission;
 - `read_metadata` — complete frontmatter for one workflow;
 - `read` — one complete approved workflow Markdown file.
 
-The agent tool will not modify configuration, edit plans, execute workflows, or track lifecycle state.
+The agent tool does not modify configuration, edit plans, execute workflows, or track lifecycle state.
 
 ## Explicitly absent from V1
 
@@ -60,7 +60,7 @@ See [`IDEAS.md`](./IDEAS.md) only for small deferred catalog improvements. The d
 
 ## Development
 
-After implementation begins:
+Package checks:
 
 ```bash
 npm install

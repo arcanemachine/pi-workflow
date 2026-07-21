@@ -1,6 +1,16 @@
 # pi-workflow V1 implementation plan
 
-Status: Product direction and V1 architecture are approved. Implementation has not started. This plan replaces the abandoned FSM design.
+Status: Product direction and V1 architecture are approved. Implementation is in progress. This plan replaces the abandoned FSM design.
+
+## Progress checkpoint
+
+- Task 1 is implemented, verified, and committed in the child repository.
+- Task 2 tool, prompt guidance, and TUI behavior are implemented and accepted. The sole command is `/workflows`, with no compatibility alias; package checks and a live plural-command smoke test passed.
+- The invalid-workflow warning observed during Task 2 acceptance came from the deliberately malformed `broken.md` fixture and demonstrated the intended diagnostic behavior.
+- Next, perform Task 3's required reading and migration.
+- Task 3 still requires its live user-acceptance gate before duplicated Practorium catalog authority is removed or migration work is committed.
+- After Task 3 acceptance, complete Task 4 documentation, superproject integration, minimum-runtime and root validation, final live scenarios, and child-before-parent commits.
+- Do not push, publish, or release.
 
 ## Purpose of this plan
 
@@ -33,7 +43,7 @@ The extension provides:
 
 - a global Markdown workflow catalog;
 - central project-to-role-to-workflow configuration;
-- one `/workflow` configuration command with a small Pi TUI;
+- one `/workflows` configuration command with a small Pi TUI;
 - one read-only `pi_workflow` agent tool;
 - strong prompt guidance for project-first discovery and explicit workflow approval;
 - clear, nonblocking diagnostics for missing or invalid catalog entries.
@@ -49,7 +59,7 @@ V1 is complete only when:
 - workflow IDs come only from filename stems;
 - valid metadata can be listed in bulk without reading workflow bodies;
 - project workflow lists are stored centrally by project and managing role;
-- `/workflow` lets the user configure those lists through project, role, and workflow selection;
+- `/workflows` lets the user configure those lists through project, role, and workflow selection;
 - `pi_workflow` provides exactly `list`, `list_global`, `read_metadata`, and `read` actions;
 - agent prompt guidance implements every approved discovery and approval guardrail;
 - missing workflows and best-effort missing global roles are visible but do not break valid entries;
@@ -76,7 +86,7 @@ V1 is complete only when:
 
 ### Project workflow list
 
-The approved term is **project workflow list**. Do not call it a workflow menu in prompts, docs, or tool output. `/workflow` is a menu-like UI, but the stored product concept is a project workflow list.
+The approved term is **project workflow list**. Do not call it a workflow menu in prompts, docs, or tool output. `/workflows` is a menu-like UI, but the stored product concept is a project workflow list.
 
 Each configured project contains only roles that manage workflows for that project. Participant roles that do not select or coordinate workflows do not need entries.
 
@@ -124,7 +134,7 @@ The extension cannot infer a project from natural-language conversation.
 - The agent may infer that ID only from an explicit project name or an unambiguous working path already present in its context.
 - If the project is ambiguous, the agent asks the user rather than guessing.
 - The tool performs exact lookup. It does not fuzzy-match or normalize an unknown requested project into an existing project.
-- `/workflow` lists configured projects and lets the user select or create one.
+- `/workflows` lists configured projects and lets the user select or create one.
 - No repository scanning or hardcoded `/workspace/projects` convention exists in runtime code.
 
 ### Role boundary
@@ -177,7 +187,7 @@ The catalog directory may be absent. In that case:
 - discovery returns an empty catalog;
 - a missing `projects.json` means empty project configuration;
 - read-only tool actions do not create files;
-- `/workflow` creates the directory and `projects.json` only after the user confirms a configuration change.
+- `/workflows` creates the directory and `projects.json` only after the user confirms a configuration change.
 
 Directory and file behavior:
 
@@ -193,7 +203,7 @@ Directory and file behavior:
 - `list` and `list_global` retain that ID as an inline invalid entry; `read_metadata` and `read` return `WORKFLOW_TOO_LARGE`, which takes precedence over `INVALID_WORKFLOW`.
 - Never truncate or partially parse an oversized workflow.
 - Limit every rendered tool result to 48 KiB, leaving margin beneath Pi's 50 KiB limit.
-- If a bulk result cannot fit, return `CATALOG_TOO_LARGE`; never silently omit workflows. The agent must stop workflow selection, report that the complete list cannot be represented, and ask the user to reduce the project workflow list through `/workflow`. It must not fall back to per-workflow inspection.
+- If a bulk result cannot fit, return `CATALOG_TOO_LARGE`; never silently omit workflows. The agent must stop workflow selection, report that the complete list cannot be represented, and ask the user to reduce the project workflow list through `/workflows`. It must not fall back to per-workflow inspection.
 - If a `read` result cannot fit despite the 32 KiB file limit, return `WORKFLOW_TOO_LARGE` without a partial body. Keep its project-assignment preamble below 2 KiB by reporting role count plus a bounded role list when necessary.
 
 ## `projects.json` contract
@@ -227,11 +237,11 @@ Validation rules:
 
 Writes:
 
-1. Read and validate the current file when `/workflow` opens.
+1. Read and validate the current file when `/workflows` opens.
 2. Preserve the exact original content token in memory.
 3. Stage all UI changes in memory.
 4. On save, read the file again.
-5. If its content differs from the opening token, abort with `CONFIG_CHANGED` and tell the user to reopen `/workflow`.
+5. If its content differs from the opening token, abort with `CONFIG_CHANGED` and tell the user to reopen `/workflows`.
 6. Serialize normalized JSON with two-space indentation and one trailing newline.
 7. Write with mode `0600` to a same-directory file named `.projects.json.tmp-<crypto.randomUUID()>`.
 8. Rename that temporary file over `projects.json` atomically.
@@ -331,7 +341,7 @@ Parameters:
 
 Build the parameter schema with `Type.Object`, `Type.Optional`, and `Type.String` imported from the bare `typebox` package. Use `StringEnum` imported from `@earendil-works/pi-ai` for the action enum. Both packages are Pi-provided optional peers; do not rely on one transitively exposing the other.
 
-The tool is read-only. It never writes `projects.json`, workflow Markdown, plans, roles, or session state. Prompt guidance also forbids agents from bypassing this boundary with general file-mutation tools; only the user-operated `/workflow` command may change `projects.json`.
+The tool is read-only. It never writes `projects.json`, workflow Markdown, plans, roles, or session state. Prompt guidance also forbids agents from bypassing this boundary with general file-mutation tools; only the user-operated `/workflows` command may change `projects.json`.
 
 ### `list`
 
@@ -353,7 +363,7 @@ Requirements:
 - Mark configured roles absent from the global role filename scan as `[unavailable]`.
 - Include catalog/config warnings after the complete project list.
 - An unknown project returns `PROJECT_NOT_FOUND` and names configured project IDs.
-- An empty project workflow list is a valid result and tells the agent the user can configure it with `/workflow`.
+- An empty project workflow list is a valid result and tells the agent the user can configure it with `/workflows`.
 
 ### `list_global`
 
@@ -361,7 +371,7 @@ Requirements:
 - Include invalid-file diagnostics.
 - Do not read or return Markdown bodies.
 - Prompt guidance, not runtime state, requires explicit user permission before an agent calls this action.
-- `/workflow` may inspect the same metadata without a separate permission because the user directly invoked the configuration command.
+- `/workflows` may inspect the same metadata without a separate permission because the user directly invoked the configuration command.
 
 ### `read_metadata`
 
@@ -427,25 +437,25 @@ The guidelines must communicate all of these rules:
 11. Workflow frontmatter in a plan does not by itself replace explicit conversational approval to use the workflow.
 12. Only agents responsible for workflow selection or coordination should investigate workflows. Workers and other roles with no configured workflows execute their assigned instructions without selecting a workflow.
 13. Workflow approval authorizes plan edits required by that approved workflow. Do not edit a plan outside direct user instruction or approved workflow/task guidance.
-14. Never add, remove, or edit project workflow assignments with `pi_workflow` or any general file-mutation tool. Only the user-operated `/workflow` command may change `projects.json`; tell the user to run it.
+14. Never add, remove, or edit project workflow assignments with `pi_workflow` or any general file-mutation tool. Only the user-operated `/workflows` command may change `projects.json`; tell the user to run it.
 15. Treat unavailable-role and missing-workflow markers as diagnostics, not permission to silently rewrite configuration.
-16. If `pi_workflow` returns `CATALOG_TOO_LARGE`, stop selection, explain that a complete bulk comparison is impossible, and ask the user to reduce the project workflow list with `/workflow`; do not inspect workflows one by one.
+16. If `pi_workflow` returns `CATALOG_TOO_LARGE`, stop selection, explain that a complete bulk comparison is impossible, and ask the user to reduce the project workflow list with `/workflows`; do not inspect workflows one by one.
 
 These are behavioral guardrails, not technical approval state. Do not add approval tokens, confirmation flags, session entries, or a hidden state machine to enforce them.
 
-## `/workflow` command contract
+## `/workflows` command contract
 
 Register one command:
 
 ```text
-/workflow
+/workflows
 ```
 
 Description:
 
 > Configure which workflows are available to each workflow-managing role in a project.
 
-V1 has no `/workflow` subcommands. If any non-whitespace arguments are supplied, show `Usage: /workflow` with the command description and return without opening the UI or writing files.
+V1 has no `/workflows` subcommands. If any non-whitespace arguments are supplied, show `Usage: /workflows` with the command description and return without opening the UI or writing files.
 
 The command requires `ctx.mode === "tui"`. In RPC, JSON, or print mode, return `UI_UNAVAILABLE` without modifying files.
 
@@ -486,7 +496,7 @@ Flow:
 14. If the selected role has no workflows after saving, remove that role entry from the project workflow list.
 15. Notify the user of the saved project ID, role ID, and workflow IDs.
 
-Opening `/workflow` is explicit user intent to inspect global workflow metadata for configuration. It does not constitute conversational approval to execute any workflow.
+Opening `/workflows` is explicit user intent to inspect global workflow metadata for configuration. It does not constitute conversational approval to execute any workflow.
 
 ## Package architecture
 
@@ -538,7 +548,7 @@ Boundaries:
 - `projects.ts`: `projects.json` parsing, normalization, compare-before-write, and atomic persistence.
 - `roles.ts`: best-effort global role filename discovery only.
 - `tool.ts`: read-only action dispatch and bounded rendering.
-- `command.ts`: `/workflow` registration and orchestration.
+- `command.ts`: `/workflows` registration and orchestration.
 - `ui/`: minimal Pi component composition; no business rules or filesystem access.
 - `index.ts`: load-safe extension registration.
 
@@ -615,8 +625,8 @@ Verify:
 
 Before accepting user-facing implementation, run Pi interactively and demonstrate:
 
-1. `/workflow` creates a project, adds an Architect role, and toggles workflows.
-2. Reopening `/workflow` shows the saved state.
+1. `/workflows` creates a project, adds an Architect role, and toggles workflows.
+2. Reopening `/workflows` shows the saved state.
 3. A configured role absent from the global role filename scan is visibly marked `[unavailable]`.
 4. A configured missing workflow remains visible and removable.
 5. `pi_workflow list` returns all project workflow metadata in one call.
@@ -691,7 +701,7 @@ Inspect the tarball file list. Run tests with temporary directories only.
 
 **Completion:** all deterministic core contracts pass without a running Pi session or real global catalog. Commit the child repository task, then proceed to Task 2.
 
-### Task 2 — Read-only agent tool, prompt guardrails, and `/workflow` UI
+### Task 2 — Read-only agent tool, prompt guardrails, and `/workflows` UI
 
 **Repository:** `/workspace/projects/pi/packages/pi-workflow`
 
@@ -700,7 +710,7 @@ Inspect the tarball file list. Run tests with temporary directories only.
 **Required reading:**
 
 - `AGENTS.md`;
-- this plan's **Agent tool contract**, **Prompt-guidance contract**, **`/workflow` command contract**, and **Testing strategy**;
+- this plan's **Agent tool contract**, **Prompt-guidance contract**, **`/workflows` command contract**, and **Testing strategy**;
 - accepted Task 1 implementation and tests;
 - `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md`;
 - `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/tui.md`;
@@ -725,7 +735,7 @@ Read the named Pi Markdown documentation completely and follow its directly rele
 - the single four-action read-only tool;
 - bounded compact output and structured details;
 - exact prompt snippet and guardrails;
-- the single `/workflow` command;
+- the single `/workflows` command;
 - staged project/role/workflow configuration UI;
 - cancellation, confirmation, unavailable markers, and conflict-safe saving;
 - no session entries, state injection, workflow execution, or additional commands.
@@ -813,7 +823,7 @@ This task explicitly authorizes all three Practorium role supplements only to id
 - verify each global workflow can be read only after the intended approval interaction;
 - run `git -C /workspace status --short` and `git check-ignore` for the created global catalog files; if those files are tracked by the workspace repository, commit only the approved catalog files there, and otherwise leave them as user configuration.
 
-**User acceptance gate:** demonstrate the migrated `/workflow` list, project tool listing, one workflow recommendation/approval/read sequence, and one Worker handoff that does not invoke workflow discovery. Obtain explicit user approval before deleting duplicated Practorium catalog files, committing user-facing migration, or proceeding to Task 4.
+**User acceptance gate:** demonstrate the migrated `/workflows` list, project tool listing, one workflow recommendation/approval/read sequence, and one Worker handoff that does not invoke workflow discovery. Obtain explicit user approval before deleting duplicated Practorium catalog files, committing user-facing migration, or proceeding to Task 4.
 
 **Completion:** accepted global workflows and Practorium guidance have one clear catalog authority. Commit each repository coherently, child repositories before any parent pointers, then proceed to Task 4. Do not commit private runtime data or unrelated global agent files.
 
@@ -837,7 +847,7 @@ This task explicitly authorizes all three Practorium role supplements only to id
 
 **Implement:**
 
-- final user documentation for catalog files, metadata, project configuration, `/workflow`, tool actions, guardrails, errors, and recovery;
+- final user documentation for catalog files, metadata, project configuration, `/workflows`, tool actions, guardrails, errors, and recovery;
 - accurate changelog and package metadata;
 - Pi superproject extension path and package listing;
 - no stale planned-FSM language;
@@ -863,7 +873,7 @@ If pnpm is unavailable, report that exact environmental blocker rather than subs
 
 Final evidence must cover all of the following:
 
-1. A user opens `/workflow` and sees configured projects.
+1. A user opens `/workflows` and sees configured projects.
 2. A user creates a lowercase-kebab project ID without storing a path.
 3. A user selects or enters a managing role.
 4. A user toggles all desired workflows in one searchable settings view.
@@ -920,7 +930,7 @@ Do not implement:
 Stop and return to the Architect and user if:
 
 - Pi cannot provide the documented `SelectList` or `SettingsList` behavior;
-- a single `/workflow` UI cannot safely stage and confirm configuration changes;
+- a single `/workflows` UI cannot safely stage and confirm configuration changes;
 - implementing role presence requires changes to `pi-role`;
 - the extension would need project root paths to satisfy active scope;
 - bulk project or global metadata cannot remain bounded without abandoning the requested one-call listing model;

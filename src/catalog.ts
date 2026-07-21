@@ -166,7 +166,10 @@ function discoverEntry(
   }
 }
 
-export function discoverWorkflowCatalog(directory: string): WorkflowCatalog {
+export function discoverWorkflowCatalog(
+  directory: string,
+  includeIds?: readonly string[],
+): WorkflowCatalog {
   const candidates = candidateNames(directory);
   const byNormalizedId = new Map<string, string[]>();
   for (const filename of candidates.names) {
@@ -181,7 +184,12 @@ export function discoverWorkflowCatalog(directory: string): WorkflowCatalog {
       .map(([id]) => id),
   );
 
+  const included = includeIds === undefined ? undefined : new Set(includeIds);
   const entries = candidates.names
+    .filter(
+      (filename) =>
+        included === undefined || included.has(workflowIdFromFilename(filename)),
+    )
     .map((filename) => discoverEntry(directory, filename, collisions))
     .sort((left, right) => left.id.localeCompare(right.id));
   return {
@@ -213,10 +221,13 @@ export function requireWorkflow(
       `Workflow ${JSON.stringify(workflowId)} was not found.`,
     );
   }
-  const tooLarge = entry.diagnostics.find(
-    (item) => item.code === "WORKFLOW_TOO_LARGE",
+  const exactFailure = entry.diagnostics.find(
+    (item) =>
+      item.code === "WORKFLOW_TOO_LARGE" || item.code === "READ_FAILED",
   );
-  if (tooLarge) throw new WorkflowError(tooLarge.code, tooLarge.message);
+  if (exactFailure) {
+    throw new WorkflowError(exactFailure.code, exactFailure.message);
+  }
   if (!entry.workflow) {
     throw new WorkflowError(
       "INVALID_WORKFLOW",

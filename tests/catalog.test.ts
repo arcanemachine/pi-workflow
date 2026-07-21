@@ -81,6 +81,17 @@ describe("discoverWorkflowCatalog", () => {
     expect(() => requireWorkflow(result, "oversized")).toThrow(/maximum/);
   });
 
+  it("can discover only requested workflow metadata without exposing other entries", () => {
+    const directory = makeTempDirectory();
+    writeFileSync(join(directory, "configured.md"), validWorkflow());
+    writeFileSync(join(directory, "unconfigured.md"), "invalid");
+
+    const result = discoverWorkflowCatalog(directory, ["configured"]);
+
+    expect(result.entries.map((entry) => entry.id)).toEqual(["configured"]);
+    expect(result.diagnostics).toEqual([]);
+  });
+
   it("marks both sides of a case-insensitive filename collision invalid", () => {
     const directory = makeTempDirectory();
     writeFileSync(join(directory, "phase.md"), validWorkflow());

@@ -1,6 +1,6 @@
 # Ideas
 
-V1 is intentionally a small global Markdown catalog, central project workflow list, read-only agent tool, and `/workflow` configuration UI. Promote an item only after concrete use demonstrates the need and the user explicitly approves it.
+V1 is intentionally a small global Markdown catalog, central project workflow list, read-only agent tool, and `/workflows` configuration UI. Promote an item only after concrete use demonstrates the need and the user explicitly approves it.
 
 ## Project-local workflow catalogs
 
@@ -16,7 +16,7 @@ V1 only scans global role filenames as a best-effort UI hint. Do not add a priva
 
 ## Catalog diagnostics command
 
-Add an explicit user-facing validation or repair view if malformed workflow files and configuration errors become difficult to resolve through `/workflow` diagnostics.
+Add an explicit user-facing validation or repair view if malformed workflow files and configuration errors become difficult to resolve through `/workflows` diagnostics.
 
 Do not create a separate command merely to duplicate errors already visible in the configuration UI and agent tool.
 
