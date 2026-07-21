@@ -802,6 +802,8 @@ This task explicitly authorizes all three Practorium role supplements only to id
   - Sergeant: `bounded-work`, `bounded-series`, and `full-phase`;
   - no Worker entry;
 - update Practorium guidance and schema-validation scripts to use the project workflow list and selected global Markdown;
+- treat the extension's `promptGuidelines` as the sole authority for `pi_workflow` invocation, approval, global-catalog permission, and Worker-exclusion behavior; Practorium role supplements, task templates, and plans must not duplicate those tool-use instructions;
+- migrate Practorium role supplements and templates by removing project-local workflow-catalog/detail references while retaining only their project-specific responsibilities and artifact guidance; do not replace removed references with `pi_workflow` command instructions;
 - retain project-specific role supplements, templates, product rules, and active plans where they remain useful;
 - remove duplicated Practorium catalog/schema/detail authority only after the live migration is accepted;
 - preserve `docs/ideas/agent-workflow-priming.md` unchanged unless the user explicitly requests an edit.
@@ -809,6 +811,8 @@ This task explicitly authorizes all three Practorium role supplements only to id
 **Do not:**
 
 - migrate product-specific guidance into global workflows;
+- duplicate extension-level tool-use or approval policy in project role supplements, templates, plans, or workflow bodies;
+- give Workers catalog-selection, workflow-approval, or `pi_workflow` instructions; Workers execute assigned artifacts and have no project workflow-list entry;
 - create project-local workflow definitions;
 - add paths to `projects.json`;
 - change Practorium product code;
