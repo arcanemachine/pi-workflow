@@ -1,861 +1,489 @@
-# pi-workflow V1 execution plan
+# pi-workflow V1 implementation plan
 
-Status: Approved architecture and executable implementation plan. Phase 0 and Phase 1 are complete. Implementation starts at Task 1.
+Status: Product direction and V1 architecture are approved. Implementation has not started. This plan replaces the abandoned FSM design.
 
-## How to use this plan
+## Purpose of this plan
 
-This is the authoritative V1 execution artifact. It is written so future implementation sessions do not need to reconstruct the architecture or ask the user to select routine mechanisms.
+This is the authoritative implementation recipe for a fresh Architect, Sergeant, or Worker. It records the approved product behavior, exact terminology, file contracts, package structure, task sequence, required reading, verification, acceptance gates, and stop conditions.
 
-When the user authorizes implementation:
+Do not reconstruct the former FSM architecture from Git history. Do not add lifecycle state, transition enforcement, SQLite, structured handoffs, or session attachment to V1.
 
-1. use the full-phase coordinated route;
-2. assign each `pi-workflow`, `pi-role`, or Practorium task to one fresh Worker session;
-3. give that Worker only the task packet and its task-specific required reading;
-4. have the Sergeant review, verify, accept, and commit the task before dispatching the next task;
-5. use a different fresh Worker for each distinct task;
-6. route Task 7 through a fresh interagent `leader`, which must follow that repository's leader/executor workflow instead of the Architect/Sergeant/Worker route;
-7. return to the user only for a stop condition, a repository-mandated dispatch gate, or the required user-facing acceptance gate.
+## Required first action
 
-Do not reopen decisions recorded under **Accepted architecture**. Do not read every referenced file up front. Each task names the minimum sources its owner must read.
+Implementation is not authorized by this document alone.
 
-This plan does not authorize pushing, publishing, or releasing packages. Those actions still require explicit user authorization.
+A fresh Architect must first recommend the `full-phase` workflow with the coordinated route because implementation contains multiple substantive tasks, introduces user-facing Pi behavior, and requires migration and live acceptance. Present this as the first standalone decision:
+
+> **1. Workflow approval:** Do you approve using `full-phase` with the coordinated route to implement `pi-workflow` V1?
+
+Wait for explicit approval. Do not combine that question with reading approval, implementation authorization, publishing, or another decision.
+
+Workflow approval settles only workflow and route selection; it does not authorize reading or dispatch. After approval, present Task 1's exact required-reading list and ask separately for:
+
+1. approval of that reading batch; and
+2. authorization to dispatch and execute Task 1.
+
+Both must be explicit before dispatch. Repeat the same bounded reading-batch and execution-authorization gates before every later task; do not treat approval of the overall workflow as permission to read or execute all tasks at once. Then use the task sequence in this plan. Assign each substantive implementation task to a fresh Worker. The Sergeant reviews, verifies, obtains any required user acceptance, accepts, and commits each task before proposing the next. Do not push, publish, or release without separate explicit authorization.
 
 ## Objective
 
-Create `@arcanemachine/pi-workflow`, a source-loaded Pi extension that deterministically owns macro workflow lifecycle state while retaining Markdown plans as the focal source of project-specific knowledge.
+Create `@arcanemachine/pi-workflow`, a thin source-loaded Pi extension that lets users maintain a project-specific list of globally available Markdown workflows and lets agents investigate that list without reading every workflow.
 
-V1 must run the Architect, Sergeant, and Worker workflows proven in Practorium across separate Pi processes with:
+The extension provides:
 
-- explicit lifecycle ownership;
-- legal, revision-checked transitions;
-- distinct user gates;
-- project-role participant bindings;
-- direct structured interagent handoffs;
-- durable local recovery;
-- focused current-state prompt context;
-- sequential fresh Workers without FSM micro-orchestration.
+- a global Markdown workflow catalog;
+- central project-to-role-to-workflow configuration;
+- one `/workflow` configuration command with a small Pi TUI;
+- one read-only `pi_workflow` agent tool;
+- strong prompt guidance for project-first discovery and explicit workflow approval;
+- clear, nonblocking diagnostics for missing or invalid catalog entries.
+
+The extension does not execute, track, enforce, or persist workflow lifecycles. Agents follow the selected Markdown workflow using their normal role instructions, plans, tools, and direct handoffs.
 
 ## Completion definition
 
 V1 is complete only when:
 
-- the package is independently installable and matches maintained sibling conventions;
-- all four bundled workflows load and validate deterministically;
-- lifecycle state and transition history survive Pi and interagent restarts;
-- concurrent processes cannot both commit the same revision;
-- one active workflow per registered project is enforced;
-- separate registered projects can run concurrently;
-- macro handoffs use exact project-role identities and structured interagent payloads;
-- Workers do not poll or update the FSM during ordinary task execution;
-- optional `pi-role` mismatches are detected without making `pi-role` mandatory;
-- Practorium successfully executes an accepted real workflow through the extension;
-- typecheck, tests, build, formatting, package checks, root workspace checks, live Pi verification, and explicit user acceptance pass;
-- deferred features remain outside V1.
+- the package is independently installable and follows sibling package conventions;
+- global workflow Markdown is discovered from the approved catalog directory;
+- workflow IDs come only from filename stems;
+- valid metadata can be listed in bulk without reading workflow bodies;
+- project workflow lists are stored centrally by project and managing role;
+- `/workflow` lets the user configure those lists through project, role, and workflow selection;
+- `pi_workflow` provides exactly `list`, `list_global`, `read_metadata`, and `read` actions;
+- agent prompt guidance implements every approved discovery and approval guardrail;
+- missing workflows and best-effort missing global roles are visible but do not break valid entries;
+- Practorium can use the global catalog and its project workflow list without duplicated catalog authority;
+- deterministic checks, package checks, root integration checks, and live Pi acceptance pass;
+- no abandoned FSM mechanism or deferred feature enters V1.
 
-## Accepted architecture
+## Approved product model
 
-These decisions are settled. Implementers must not substitute alternatives without returning to the Architect and user.
+### Workflow catalog
 
-### Product and workflow boundaries
+- All workflow definitions are user-owned Markdown files in one global directory.
+- The package ships no built-in workflows.
+- Production resolves the directory as `join(getAgentDir(), "workflows")`.
+- In the current workspace this normally resolves to `/workspace/.pi/agent/workflows`, but implementation must use `getAgentDir()` rather than hardcoding that path.
+- `PI_WORKFLOW_DIR` may override the catalog directory only for automated tests, isolated development, and disposable live acceptance. It must be an absolute path. Production documentation presents the `getAgentDir()` location as the normal catalog.
+- Only direct, non-hidden `*.md` files are workflow definitions.
+- Subdirectories are not recursively scanned in V1.
+- A workflow file's basename without `.md` is its complete workflow ID.
+- There is no `id` frontmatter field.
+- IDs must be lowercase kebab-case matching `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
+- Example: `full-phase.md` has workflow ID `full-phase`.
+- Renaming a file changes its workflow ID. V1 has no aliases, redirects, or rename migration.
 
-- The package name is singular: `pi-workflow`.
-- Markdown plans remain authoritative for purpose, decisions, task scope, non-goals, task packets, verification instructions, and acceptance expectations.
-- The FSM is authoritative for current lifecycle state, revision, owner, participant bindings, gates, blocking status, and transition history.
-- The FSM is coarse. It does not model tool calls, files, tests, todos, Worker progress, or ordinary Sergeant-to-Worker interactions.
-- Workers normally do not call or poll the workflow engine.
-- V1 bundles only `bounded-work`, `bounded-series`, `seed-planning`, and `full-phase`.
-- V1 serves the existing Architect, Sergeant, and Worker contracts first. It is not a generic workflow-authoring platform.
-- One registered project may have one active V1 workflow. Different registered projects may each have one.
+### Project workflow list
 
-### Roles and participants
+The approved term is **project workflow list**. Do not call it a workflow menu in prompts, docs, or tool output. `/workflow` is a menu-like UI, but the stored product concept is a project workflow list.
 
-- Roles remain standalone operating contracts.
-- Workflows own participant slots, routes, lifecycle ownership, and handoffs.
-- `pi-role` remains optional and independently usable.
-- `pi-workflow` may validate an effective `pi-role` key but must not activate, reload, disable, or otherwise mutate roles.
-- Mandatory authorization comes from the bound participant identity and workflow slot.
-- When reliable `pi-role` state exists, an inactive role or mismatched role blocks the transition.
-- When `pi-role` is absent and has never published effective state, the transition may proceed with a visible `role-unverified` diagnostic.
-- A direct Architect-to-Worker route is valid. That route assigns dispatch, review, integration, acceptance handling, authorized lifecycle updates, final verification, and reporting to the Architect.
-- Worker count is dynamic. Plans define substantial tasks; execution allocates fresh sequential Worker identities.
+Each configured project contains only roles that manage workflows for that project. Participant roles that do not select or coordinate workflows do not need entries.
 
-### Identity convention
-
-Concrete interagent identities are:
-
-```text
-<participant-prefix>-architect
-<participant-prefix>-sergeant
-<participant-prefix>-worker
-<participant-prefix>-worker-2
-<participant-prefix>-worker-3
-```
-
-The project registry key is the default participant prefix. A configured `participantPrefix` may override it. Numbered Workers are distinct concrete sessions whose role key is still `worker`.
-
-Workflow delivery always requests exact target resolution. It must never rely on interagent's unique-prefix fallback.
-
-### State and storage
-
-- Authoritative V1 state is owned by `pi-workflow`, not interagent, project files, or Pi session entries.
-- Use the built-in `node:sqlite` API. Do not add an ORM, `better-sqlite3`, `sqlite3`, or another storage dependency.
-- Require Node.js `>=24.16.0`.
-- Isolate all `node:sqlite` imports and SQL behind `src/store/sqlite.ts` and adjacent store types/schema helpers.
-- Store the database in the platform user-state directory, never in a project repository.
-- All participating V1 Pi processes must share that user-state filesystem.
-- Use short `BEGIN IMMEDIATE` transactions, prepared statements, a nonzero busy timeout, and expected-revision writes.
-- Store both the current instance record and append-only transition/delivery events in the same transaction when they change together.
-- Do not introduce a daemon. Each Pi process opens the same local database as needed.
-- Separate machines, isolated containers or home directories, and remote state are deferred.
-
-### Interagent boundary
-
-- Interagent is the only V1 coordination transport.
-- Use direct messages only. Do not use pub/sub, broadcasts, filesystem inboxes, or alternate transports.
-- Use a versioned targeted custom payload for macro handoffs.
-- Handoff messages are notifications to consult authoritative state; they are not lifecycle authority.
-- Commit an authorized lifecycle transition before attempting delivery.
-- Record delivery as `pending`, `delivered`, or `failed` separately. A retry must not duplicate the lifecycle transition.
-- Ordinary task dispatch and Worker reports remain normal direct interagent text messages outside the workflow FSM.
-
-### Dependency policy
-
-Runtime dependencies are limited to what active V1 needs:
-
-- `node:sqlite`, `node:crypto`, `node:fs`, `node:os`, and `node:path` from Node;
-- Pi packages as optional peer dependencies;
-- no schema library, ORM, YAML dependency, WebSocket client, or generic state-machine framework.
-
-Use TypeScript types plus focused hand-written runtime validators. Use Pi's existing frontmatter parser for plan files.
-
-## Verified Phase 1 findings
-
-Implementation may rely on these facts:
-
-- Interagent exposes importable Python direct-send, custom-message, and list operations.
-- Its server stores connections, channels, and subscriptions only in memory.
-- It has no durable message history, extension state, or compare-and-swap facility.
-- Server restart clears bus state and undelivered messages.
-- Active names and session IDs are server-global; concurrent collisions are rejected.
-- Disconnected names and session IDs can reconnect.
-- Listing exposes `session_id`, routing `name`, and display-only `label`.
-- Routing checks exact names first and then unique prefixes.
-- Targeted `custom` frames preserve opaque JSON in the server, but the current Pi integration discards the structured payload when injecting the message into Pi.
-- The Pi listener can reconnect, inject a message with `pi.sendMessage`, trigger a turn, and allow `before_agent_start` to refresh context.
-- `pi-role` keeps live role state in a private closure and currently persists versioned historical session entries.
-- Node 24.16 exposes `node:sqlite` as Stability 1.2, with `DatabaseSync`, prepared statements, raw transaction SQL, and configurable busy timeout.
-- A local two-process spike on Node 24.16 and Node 26.5 confirmed that an expected-revision update allows exactly one contender to advance a revision.
-
-## Runtime composition
-
-An active instance is:
-
-```text
-bundled workflow definition
-+ project Markdown plan/brief
-+ SQLite runtime record and event history
-+ current participant session context
-```
-
-Authority is divided as follows:
-
-| Concern | Authority |
-| --- | --- |
-| Purpose, decisions, task scope, non-goals | Markdown plan |
-| Task packets and verification instructions | Markdown plan/task artifacts |
-| Current lifecycle state and revision | SQLite runtime record |
-| Current owner and participant bindings | SQLite runtime record |
-| Gate evidence and blocking status | SQLite runtime record/events |
-| Transition and delivery history | SQLite events |
-| Current role instructions | `pi-role` when installed |
-| Message delivery and presence | interagent |
-| Project-specific product rules | Project agent guidance |
-
-No component may infer current lifecycle state from headings, checkboxes, or prose in the plan.
-
-## Workspace configuration contract
-
-Pi normally starts from `/workspace`. Load global settings first and workspace/project settings second using the same precedence conventions as maintained Pi extensions.
-
-Configuration shape:
+Example:
 
 ```json
 {
-  "pi-workflow": {
-    "dataDir": "~/.local/state/pi-workflow",
-    "projects": {
-      "practorium": {
-        "root": "projects/practorium",
-        "plansDir": "plans"
-      },
-      "inter-agent": {
-        "root": "projects/inter-agent",
-        "plansDir": "docs/plans"
-      },
-      "pi-workflow": {
-        "root": "projects/pi/packages/pi-workflow",
-        "plansDir": "plans"
+  "version": 1,
+  "projects": {
+    "practorium": {
+      "roles": {
+        "architect": [
+          "bounded-series",
+          "bounded-work",
+          "full-phase",
+          "seed-planning"
+        ],
+        "sergeant": [
+          "bounded-series",
+          "bounded-work",
+          "full-phase"
+        ]
       }
     }
   }
 }
 ```
 
-Project entry fields:
-
-```ts
-interface WorkflowProjectConfig {
-  root: string;
-  plansDir: string;
-  participantPrefix?: string;
-  participants?: {
-    architect?: string;
-    sergeant?: string;
-    workerPrefix?: string;
-  };
-}
-```
-
 Rules:
 
-- Registry keys are stable local project namespaces.
-- `root` and `plansDir` are required non-empty paths.
-- Relative project roots, plan directories, and `dataDir` resolve from Pi's runtime cwd. They do not resolve from the physical target of a symlinked settings file. With Pi started in `/workspace`, `root: "projects/practorium"` resolves to `/workspace/projects/practorium`.
-- Normalize and resolve paths before use.
-- Reject a project root outside the configured workspace unless the user explicitly configured an absolute root.
-- Constrain plan paths to the registered project root and configured plan directory.
-- Nested repositories and submodules are valid roots.
-- Explicit project selection wins when roots overlap.
-- Infer a project only from an explicit plan path and only by the longest matching registered root.
-- The registry key is the default participant prefix.
-- Default participant identities derive from the convention above; explicit participant fields override only their named slot/prefix.
-- `dataDir` is optional. Its platform default is `${XDG_STATE_HOME:-~/.local/state}/pi-workflow` on Linux and the platform application-state location on macOS. Create it with restrictive permissions.
-- The database filename is `workflows.db`.
-- `PI_WORKFLOW_DATA_DIR` may override the state directory for tests and isolated installations. It takes precedence over settings.
+- Project IDs and role IDs use the same lowercase kebab-case pattern as workflow IDs.
+- The user chooses project IDs. A directory basename may be suggested, but it is not authoritative until the user confirms it.
+- No project root path is stored.
+- Workflow references are exact workflow IDs.
+- Role entries with no workflows are removed during normalized writes.
+- Projects may remain with an empty `roles` object.
+- Workflow arrays are de-duplicated and sorted by ID.
+- Project and role keys are serialized in lexical order for stable diffs.
 
-## Plan artifact contract
+### Project identification
 
-Every plan or brief used to start a workflow has frontmatter:
+The extension cannot infer a project from natural-language conversation.
 
-```yaml
----
-kind: workflow-plan
-id: phase-31-example
-workflow: full-phase
-workflow-version: 1
-route: coordinated
-user-facing: true
----
+- Agent tool calls use an exact project ID, for example `practorium`.
+- The agent may infer that ID only from an explicit project name or an unambiguous working path already present in its context.
+- If the project is ambiguous, the agent asks the user rather than guessing.
+- The tool performs exact lookup. It does not fuzzy-match or normalize an unknown requested project into an existing project.
+- `/workflow` lists configured projects and lets the user select or create one.
+- No repository scanning or hardcoded `/workspace/projects` convention exists in runtime code.
+
+### Role boundary
+
+Integration with roles is deliberately shallow and one-way.
+
+`pi-workflow` may:
+
+- store role IDs as grouping keys in project configuration;
+- scan direct `*.md` filenames under `join(getAgentDir(), "roles")` as a best-effort list of globally present role IDs;
+- suggest those IDs when configuring a project;
+- retain manually entered role IDs;
+- label a configured role `[unavailable]` when no same-named global role file is present.
+
+`pi-workflow` must not:
+
+- import or depend on `pi-role`;
+- change `pi-role`;
+- activate, disable, reload, or validate roles;
+- inspect active role state;
+- scan project-local role directories;
+- block workflow reading or configuration because a role is unavailable;
+- claim that filename presence proves a role is valid or active.
+
+`pi-role` remains unaware of workflows. A Worker may participate in a workflow without having an entry in the project workflow list.
+
+### Authority and state
+
+- Workflow Markdown is authoritative for workflow selection guidance and execution instructions.
+- `projects.json` is authoritative only for which workflows are exposed to each managing role in each configured project.
+- Conversation and user instructions remain authoritative for workflow approval.
+- Plans and project guidance remain authoritative for project-specific scope and execution.
+- There is no active workflow record.
+- There is no current workflow state, revision, owner, gate record, participant binding, or transition history.
+- There is no session persistence or plan attachment.
+- Interagent remains ordinary direct coordination and is not changed by this project.
+
+## Filesystem contract
+
+Production paths:
+
+```text
+<getAgentDir()>/workflows/
+  projects.json
+  <workflow-id>.md
 ```
 
-Required fields:
+The catalog directory may be absent. In that case:
 
-- `kind`: exactly `workflow-plan`;
-- `id`: non-empty stable identifier, unique within the registered project;
-- `workflow`: one bundled workflow key;
-- `workflow-version`: positive integer matching the bundled definition;
-- `route`: a route supported by that definition;
-- `user-facing`: boolean controlling the mandatory user-acceptance gate.
+- discovery returns an empty catalog;
+- a missing `projects.json` means empty project configuration;
+- read-only tool actions do not create files;
+- `/workflow` creates the directory and `projects.json` only after the user confirms a configuration change.
 
-Rules:
+Directory and file behavior:
 
-- Parse with Pi's frontmatter parser.
-- Reject missing, unknown, malformed, or mismatched fields with field-specific errors.
-- Preserve unknown frontmatter fields for project use but do not let them change lifecycle semantics.
-- Store only the project-relative artifact path in runtime state.
-- Validate that the artifact exists and remains inside the configured plan directory at workflow start.
-- Do not copy long-form Markdown into SQLite.
-- Do not parse task checkboxes into lifecycle state.
+- Create the catalog directory recursively when saving configuration.
+- Use restrictive user permissions where supported: `0700` for the directory and `0600` for `projects.json`.
+- Workflow Markdown permissions are user-managed.
+- Ignore hidden files, non-Markdown files, and nested directories during workflow discovery.
+- Accept direct regular files and symbolic links, as `pi-role` does.
+- Do not follow directories through symlinks.
+- Sort discovery results by workflow ID.
+- Detect case-insensitive filename collisions and report both entries as invalid rather than picking one.
+- Limit each workflow file to 32 KiB of UTF-8 content. Report an actionable error rather than truncating a workflow body.
+- Limit every rendered tool result to 48 KiB, leaving margin beneath Pi's 50 KiB limit.
+- If a bulk result cannot fit, return `CATALOG_TOO_LARGE`; never silently omit workflows.
+- If a `read` result cannot fit despite the 32 KiB file limit, return `WORKFLOW_TOO_LARGE` without a partial body. Keep its project-assignment preamble below 2 KiB by reporting role count plus a bounded role list when necessary.
 
-## Workflow-definition contract
+## `projects.json` contract
 
-Bundled definitions are typed TypeScript data under `src/workflows/definitions/`. V1 does not load user-authored workflow definitions.
+Use this exact version-1 shape:
 
 ```ts
-type ParticipantSlot = "architect" | "sergeant" | "worker" | "user";
-
-type GateKey =
-  | "planning-reading"
-  | "decision-approval"
-  | "workflow-launch"
-  | "execution-route"
-  | "execution-authorization"
-  | "user-acceptance"
-  | "architecture-acceptance"
-  | "cancellation"
-  | "override"
-  | "commit-authorization";
-
-type ResponsibilityKey =
-  | "planning"
-  | "dispatch"
-  | "task-execution"
-  | "task-review"
-  | "integration"
-  | "lifecycle-execution"
-  | "user-acceptance-handling"
-  | "architecture-acceptance"
-  | "closeout"
-  | "final-verification"
-  | "reporting";
-
-type ArtifactKind =
-  | "primary-plan"
-  | "task-packet"
-  | "verification-evidence"
-  | "user-acceptance-evidence"
-  | "architecture-acceptance-evidence"
-  | "correction-evidence"
-  | "closeout-evidence"
-  | "blocking-resolution-evidence";
-
-interface WorkflowDefinition {
-  key: "bounded-work" | "bounded-series" | "seed-planning" | "full-phase";
+interface ProjectsFileV1 {
   version: 1;
-  title: string;
-  selectionGuidance: string;
-  initialState: string;
-  terminalStates: string[];
-  requiredResponsibilities: ResponsibilityKey[];
-  routes: RouteDefinition[];
-  gateKeys: GateKey[];
-  states: StateDefinition[];
-  transitions: TransitionDefinition[];
-}
-
-interface RouteDefinition {
-  key: string;
-  requiredSlots: ParticipantSlot[];
-  responsibilityAssignments: Partial<
-    Record<ResponsibilityKey, ParticipantSlot>
+  projects: Record<
+    string,
+    {
+      roles: Record<string, string[]>;
+    }
   >;
 }
-
-interface StateDefinition {
-  key: string;
-  owner:
-    | { mode: "route"; byRoute: Record<string, ParticipantSlot> }
-    | { mode: "retain-current" };
-  instructionsFile: string;
-  terminal?: boolean;
-}
-
-interface TransitionDefinition {
-  key: string;
-  from: string[];
-  to: string;
-  actorByRoute: Record<string, ParticipantSlot>;
-  requiredArtifactKinds: ArtifactKind[];
-  requiredGateKeys: GateKey[];
-  effect?: "normal" | "block" | "resume" | "cancel" | "override";
-  handoffByRoute: Record<string, "none" | "macro">;
-  correction?: boolean;
-}
 ```
 
-Hand-written validation must reject:
+Validation rules:
 
-- duplicate workflow, route, state, or transition keys;
-- missing initial or terminal states;
-- transitions referencing unknown states or slots;
-- unreachable nonterminal states;
-- a route-owned state or transition without an owner/actor entry for every supported route;
-- `retain-current` ownership on any state other than `blocked` or a terminal state;
-- a transition without a handoff-mode entry for every supported route;
-- routes missing a slot required by a state or transition;
-- any route that does not assign every `requiredResponsibilities` key;
-- responsibility gaps in routes that omit Sergeant;
-- a route whose handoff mode is `macro` when its resolved source and destination owner are the same;
-- a route whose handoff mode is `none` when its resolved source and destination owner differ;
-- a gate key not declared by the workflow;
-- instruction files that cannot be loaded;
-- unsupported definition versions.
+- The root must be an object with exactly `version` and `projects`.
+- `version` must equal `1`.
+- `projects` must be an object.
+- Every project key and role key must be a valid lowercase kebab-case ID.
+- Every project value must contain exactly `roles`.
+- Every role value must be an array of valid workflow IDs.
+- Duplicate workflow IDs are invalid on read; normalized UI writes remove duplicates.
+- Unknown fields are rejected because this is extension-owned configuration.
+- Invalid configuration is never silently repaired or overwritten.
+- A newer version fails closed with a clear unsupported-version diagnostic.
 
-State instructions are Markdown assets under `src/workflows/instructions/`. They contain only generic current-state responsibilities, evidence requirements, legal next actions, and stop conditions. They must not contain Practorium-specific paths, product rules, or verification commands.
+Writes:
 
-## Bundled workflow semantics
+1. Read and validate the current file when `/workflow` opens.
+2. Preserve the exact original content token in memory.
+3. Stage all UI changes in memory.
+4. On save, read the file again.
+5. If its content differs from the opening token, abort with `CONFIG_CHANGED` and tell the user to reopen `/workflow`.
+6. Serialize normalized JSON with two-space indentation and one trailing newline.
+7. Write with mode `0600` to a same-directory file named `.projects.json.tmp-<crypto.randomUUID()>`.
+8. Rename that temporary file over `projects.json` atomically.
+9. Remove that operation's temporary file on a caught failure.
+10. Ignore stale `.projects.json.tmp-*` files from crashed processes; unique names prevent collision, and workflow discovery ignores non-Markdown files.
 
-The existing Practorium workflow documents are normative behavioral sources. Conversion is transcription and normalization, not redesign. If a source uses project-specific wording, preserve the generic lifecycle obligation and leave the project-specific content in Practorium guidance.
+Do not add a database, lock service, daemon, or cross-process transaction system. The compare-before-write check is sufficient for this user-operated configuration surface.
 
-### Common blocking operations
+## Workflow Markdown contract
 
-Every bundled workflow supports an orthogonal blocking loop without treating ordinary work as blocked lifecycle traffic:
+Example:
 
-- `block`: any nonterminal, nonblocked state moves to `blocked`, retains the current owner, and records `previousState`, a non-empty reason, actor, and timestamp;
-- `resume`: `blocked` returns to `previousState`, retains the resolved owner for that state and route, and requires non-empty resolution evidence;
-- a participant owner may block and resume an operational impediment;
-- a blocker whose recorded kind is `user-decision` can be resumed only by a user command;
-- cancellation remains available while blocked;
-- no other transition may leave `blocked`.
+```markdown
+---
+title: Bounded work
+summary: Execute one substantive, well-bounded task.
+managing_roles:
+  - architect
+  - sergeant
+use_when:
+  - Scope, verification, and stop conditions can be stated before execution.
+  - One Worker can execute the substantive task.
+avoid_when:
+  - Two or more substantive tasks need milestone coordination.
+routing:
+  direct:
+    participants:
+      planner: architect
+      implementer: worker
+    use_when:
+      - Architect review is sufficient.
+  coordinated:
+    participants:
+      planner: architect
+      coordinator: sergeant
+      implementer: worker
+    use_when:
+      - A separate coordination and review layer is useful.
+---
 
-### `full-phase`
+# Bounded work
 
-Routes:
-
-- `coordinated`: Architect plans and accepts architecture; Sergeant owns execution and closeout; fresh Workers execute substantial tasks.
-- `direct`: Architect additionally owns dispatch, review, integration, execution-state advancement, acceptance handling, final verification, and reporting; fresh Workers execute substantial tasks.
-
-`requiredResponsibilities` contains all eleven canonical responsibility keys. Assignments are fixed:
-
-| Responsibility | `coordinated` | `direct` |
-| --- | --- | --- |
-| planning | Architect | Architect |
-| dispatch | Sergeant | Architect |
-| task-execution | Worker | Worker |
-| task-review | Sergeant | Architect |
-| integration | Sergeant | Architect |
-| lifecycle-execution | Sergeant | Architect |
-| user-acceptance-handling | Architect | Architect |
-| architecture-acceptance | Architect | Architect |
-| closeout | Sergeant | Architect |
-| final-verification | Sergeant | Architect |
-| reporting | Sergeant | Architect |
-
-The definition declares all canonical gate keys because full-phase planning and acceptance must keep every approval category distinct. A gate is required only on the transitions that name it.
-
-Macro states and ownership:
-
-```text
-planning                             Architect
-ready-for-execution                  Sergeant on coordinated route; Architect on direct route
-executing                            Sergeant on coordinated route; Architect on direct route
-ready-for-architecture-acceptance    Architect
-ready-for-closeout                   Sergeant on coordinated route; Architect on direct route
-closed                               terminal
-cancelled                            terminal
-blocked                              current owner retained with blocking reason
+Complete workflow guidance follows here.
 ```
 
-Required transitions:
-
-- create instance in `planning` under Architect ownership;
-- approve ready execution: `planning -> ready-for-execution`, Architect actor, approved plan and execution-route gate required, macro handoff when ownership changes;
-- begin execution: `ready-for-execution -> executing`, current execution owner;
-- complete integrated execution: `executing -> ready-for-architecture-acceptance`, execution owner, all active-sequence tasks accepted and integrated, macro handoff to Architect;
-- accept architecture: `ready-for-architecture-acceptance -> ready-for-closeout`, Architect, architecture evidence required, and user-acceptance evidence required when `user-facing: true`;
-- reject architecture: `ready-for-architecture-acceptance -> executing`, Architect, correction evidence required, macro handoff to execution owner;
-- complete closeout: `ready-for-closeout -> closed`, closeout owner, final verification and clean-state evidence required;
-- return closeout correction: `ready-for-closeout -> executing`, closeout owner, correction evidence required;
-- cancel from any nonterminal state through a user-authorized cancellation event;
-- override only through a user command with a required reason and explicit destination validation.
-
-The execution owner runs the substantial task loop without FSM transitions:
-
-1. select the next task from the plan;
-2. allocate the next unused Worker identity;
-3. send that Worker the complete task packet directly;
-4. receive the report directly;
-5. review scope, behavior, checks, and acceptance status;
-6. make only workflow-permitted narrow corrections or return substantive work;
-7. accept, integrate, and commit the task;
-8. update the Markdown task artifact according to project convention;
-9. dispatch the next task to a different fresh Worker;
-10. transition only when the complete active task sequence is integrated.
-
-### `bounded-work`
-
-Use for one substantive, well-bounded implementation task.
-
-- Route is `direct`.
-- `requiredResponsibilities` contains every canonical responsibility except `architecture-acceptance`.
-- Responsibility mapping assigns `task-execution` to Worker and every required remaining responsibility to Architect.
-- Gate keys are `planning-reading`, `decision-approval`, `workflow-launch`, `execution-route`, `execution-authorization`, `user-acceptance`, `cancellation`, `override`, and `commit-authorization`.
-- Architect owns planning, dispatch, review, integration, acceptance handling, state advancement, final verification, and reporting.
-- One fresh Worker executes the task.
-- Do not add Sergeant or full-phase architecture-acceptance/closeout ceremony.
-- States are `planning`, `ready-for-execution`, `executing`, `ready-for-review`, `closed`, `cancelled`, and `blocked`.
-- User acceptance is required before closure only when `user-facing: true`.
-- Substantive review failure returns `ready-for-review -> executing` with correction evidence.
-
-### `bounded-series`
-
-Use for a small concrete sequence of settled, low-risk tasks.
-
-- Route is `direct`.
-- `requiredResponsibilities` and its mapping match bounded work: `task-execution` belongs to Worker and all remaining required responsibilities belong to Architect.
-- Gate keys match bounded work.
-- Architect owns the series and the responsibilities assigned to the execution owner above.
-- Each distinct substantive task uses a different fresh Worker.
-- Task sequencing remains in the Markdown series artifact, not in the FSM.
-- States match bounded work: `planning`, `ready-for-execution`, `executing`, `ready-for-review`, `closed`, `cancelled`, and `blocked`.
-- Advance to review only after the entire series is accepted and integrated.
-- Review failure returns to `executing` with correction evidence.
-- Do not promote the series to full-phase ceremony unless evidence shows that its scope or risk no longer fits; that is a stop condition for the Architect.
-
-### `seed-planning`
-
-Use to create or refine a durable future planning seed. It never authorizes implementation.
-
-- Route is `architect-only`.
-- `requiredResponsibilities` contains only `planning`, `user-acceptance-handling`, `final-verification`, and `reporting`, all assigned to Architect.
-- Gate keys are `planning-reading`, `decision-approval`, `workflow-launch`, `user-acceptance`, `cancellation`, `override`, and `commit-authorization`.
-- Architect is the sole participant owner.
-- States are `planning`, `ready-for-review`, `closed`, `cancelled`, and `blocked`.
-- Closure means the seed preserves verified facts, facts to revalidate, user direction, open decisions, promotion triggers, likely source areas, required future reading, verification implications, acceptance implications, and stop conditions.
-- A closed seed remains non-executable until the user separately promotes it into an implementation plan.
-- No Worker dispatch, Sergeant ownership, implementation transition, or code-change authority exists in this workflow.
-
-## Runtime record contract
+Required frontmatter:
 
 ```ts
-interface ParticipantBindings {
-  architect: string;
-  sergeant?: string;
-  workerPrefix: string;
-}
-
-interface BlockingRecord {
-  previousState: string;
-  kind: "operational" | "user-decision";
-  reason: string;
-  recordedAt: string;
-  recordedBy: string;
-}
-
-interface HandoffRecord {
-  deliveryId: string;
-  transitionRevision: number;
-  targetIdentity: string;
-  status: "pending" | "delivered" | "failed";
-  attempt: number;
-  lastAttemptAt?: string;
-  diagnostic?: string;
-}
-
-interface WorkflowInstanceRecord {
-  recordVersion: 1;
-  id: string;
-  projectKey: string;
-  workflowKey: string;
-  workflowVersion: 1;
-  artifactPath: string;
-  routeKey: string;
-  userFacing: boolean;
-  state: string;
-  ownerSlot: ParticipantSlot;
-  participants: ParticipantBindings;
-  allocatedWorkers: string[];
-  gates: Record<string, GateEvidence>;
-  blocking: BlockingRecord | null;
-  handoff: HandoffRecord | null;
-  revision: number;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
+interface WorkflowMetadataV1 {
+  title: string;
+  summary: string;
+  managing_roles: string[];
+  use_when: string[];
+  avoid_when: string[];
+  routing?: Record<
+    string,
+    {
+      participants: Record<string, string>;
+      use_when?: string[];
+    }
+  >;
+  [additionalField: string]: unknown;
 }
 ```
 
-Participant bindings store concrete routing identities, not inferred roles. Worker allocation records every used identity so a completed task cannot silently reuse a Worker for a distinct task.
+Validation:
 
-Gate evidence records:
+- Parse with Pi's `parseFrontmatter`.
+- `title` and `summary` are required non-empty strings.
+- `managing_roles`, `use_when`, and `avoid_when` are required non-empty arrays.
+- Managing role values must be valid lowercase kebab-case role IDs and must not repeat.
+- Every selection-guidance entry must be a non-empty string.
+- `routing`, when present, must be a non-empty object.
+- Route keys and participant role values must be valid lowercase kebab-case IDs.
+- Every route must have a non-empty `participants` object.
+- Route responsibility keys are non-empty strings; V1 does not impose a fixed responsibility taxonomy.
+- Route `use_when`, when present, is a non-empty array of non-empty strings.
+- The Markdown body must be non-empty.
+- Additional frontmatter other than `id` is tolerated and preserved by `read_metadata`, but bulk `list` output ignores it.
+- An `id` frontmatter field is invalid because the filename stem is the sole workflow ID.
 
-```ts
-interface GateEvidence {
-  key: string;
-  kind: "user-command" | "user-confirmation" | "participant-evidence";
-  actorIdentity?: string;
-  actorSlot?: ParticipantSlot;
-  recordedAt: string;
-  revision: number;
-  details: Record<string, unknown>;
-}
-```
+Discovery returns valid workflows and diagnostics for invalid files. One invalid workflow must not prevent valid workflows from being listed or read.
 
-Never allow one gate record to satisfy a differently keyed gate. Reading approval, route approval, execution authorization, user acceptance, architecture acceptance, and commit authority remain distinct.
+## Agent tool contract
 
-## SQLite contract
+Register exactly one tool named `pi_workflow`.
 
-Default database: `<user-state-dir>/pi-workflow/workflows.db`.
-
-Use this schema. Identifier names and column semantics are fixed for schema version 1:
-
-```sql
-CREATE TABLE workflow_instances (
-  id TEXT PRIMARY KEY,
-  project_key TEXT NOT NULL,
-  artifact_path TEXT NOT NULL,
-  workflow_key TEXT NOT NULL,
-  state_key TEXT NOT NULL,
-  owner_slot TEXT NOT NULL,
-  revision INTEGER NOT NULL CHECK (revision >= 0),
-  active INTEGER NOT NULL CHECK (active IN (0, 1)),
-  record_json TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE UNIQUE INDEX one_active_workflow_per_project
-  ON workflow_instances(project_key)
-  WHERE active = 1;
-
-CREATE TABLE workflow_events (
-  instance_id TEXT NOT NULL,
-  revision INTEGER NOT NULL,
-  event_type TEXT NOT NULL,
-  event_json TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  PRIMARY KEY (instance_id, revision),
-  FOREIGN KEY (instance_id) REFERENCES workflow_instances(id)
-);
-```
-
-Store rules:
-
-- Set and validate `PRAGMA user_version`.
-- Enable foreign keys.
-- Open every connection with a 5000 ms busy timeout.
-- Keep transactions short and synchronous.
-- Start mutations with `BEGIN IMMEDIATE`.
-- Update using `WHERE id = ? AND revision = ?`.
-- Treat `changes !== 1` as a stale revision and roll back.
-- Increment revision exactly once per committed lifecycle or delivery event.
-- Update the current JSON record and append its event in one transaction.
-- Always roll back in `catch` when `database.isTransaction` is true.
-- Close connections deterministically.
-- Fail closed on a newer unsupported schema version.
-- Produce actionable errors containing the operation and database path but not secrets or full plan contents.
-- Create the state directory with mode `0700` and database with restrictive user access where the platform permits.
-- Inject clock and ID generation in tests; production uses UTC ISO timestamps and `crypto.randomUUID()`.
-
-Repository and session forks do not copy SQLite authority. A resumed session reads current state. A cloned session that attempts to reuse an active interagent name receives an identity-collision error and must not mutate workflow state.
-
-## Transition-engine contract
-
-The engine is pure except for its caller-provided time and ID values. It does not read files, SQLite, Pi state, or interagent directly.
-
-Input:
-
-```ts
-interface TransitionRequest {
-  instance: WorkflowInstanceRecord;
-  definition: WorkflowDefinition;
-  transitionKey: string;
-  expectedRevision: number;
-  actor: {
-    kind: "user" | "participant";
-    identity?: string;
-    slot?: ParticipantSlot;
-    effectiveRoleKey?: string;
-    roleValidation: "matched" | "mismatched" | "inactive" | "unverified";
-  };
-  evidence: Record<string, unknown>;
-  now: string;
-}
-```
-
-Map effective-role entries before calling the engine: an active matching key is `matched`; an active different key is `mismatched`; a valid inactive entry is `inactive`; no valid effective entry is `unverified`.
-
-Output is either a complete next record plus event or a typed rejection. Engine rejection codes include:
-
-- `INSTANCE_NOT_FOUND`;
-- `NO_ACTIVE_WORKFLOW`;
-- `ACTIVE_WORKFLOW_EXISTS`;
-- `STALE_REVISION`;
-- `UNKNOWN_TRANSITION`;
-- `ILLEGAL_TRANSITION`;
-- `WRONG_OWNER`;
-- `WRONG_PARTICIPANT`;
-- `ROLE_MISMATCH`;
-- `ROLE_INACTIVE`;
-- `MISSING_ARTIFACT`;
-- `MISSING_EVIDENCE`;
-- `MISSING_GATE`;
-- `USER_COMMAND_REQUIRED`;
-- `BLOCKED`;
-- `TERMINAL_INSTANCE`;
-- `HANDOFF_PENDING`.
-
-`ROLE_UNVERIFIED` is a nonblocking engine diagnostic, not a rejection. `HANDOFF_TARGET_UNAVAILABLE`, `HANDOFF_DELIVERY_FAILED`, and helper/runtime setup errors belong to the interagent handoff layer, not the pure engine.
-
-Validation order is fixed:
-
-1. instance and record/definition version;
-2. expected revision;
-3. terminal-instance rejection;
-4. blocking rules, allowing only resume or cancel as specified;
-5. outstanding handoff rejection for lifecycle transitions, while allowing delivery retry;
-6. transition existence and source-state legality;
-7. actor identity and route-resolved slot;
-8. `mismatched` or `inactive` role rejection; `unverified` adds only the nonblocking diagnostic;
-9. required artifacts;
-10. required gate keys and whether direct user evidence is required;
-11. remaining transition evidence;
-12. state effects and route-resolved ownership/handoff effects.
-
-Workflow start, cancellation, override, and transitions requiring a user gate need direct user evidence from a user command or a named TUI confirmation. Agent tools may open that confirmation but must not manufacture, infer, reuse, or bypass its result.
-
-## Effective role and identity contracts
-
-### `pi-role`
-
-Add a stable custom session entry separate from historical UI messages:
-
-```text
-customType: pi-role:effective-state
-```
-
-```ts
-interface EffectiveRoleStateEntry {
-  version: 1;
-  active: boolean;
-  reason:
-    | "activated"
-    | "reloaded"
-    | "restored"
-    | "disabled"
-    | "new-session"
-    | "unavailable";
-  key?: string;
-  name?: string;
-  source?: "user" | "project";
-  path?: string;
-}
-```
-
-`pi-role` appends the effective entry after session startup resolves the actual role and after every role mutation. Active entries include the complete role identity. Inactive entries omit it. Preserve existing `pi-role:state` entries for compatibility.
-
-`pi-workflow` scans the current branch for the latest valid effective entry. It does not import `pi-role`, call its commands, or share its runtime object.
-
-### Pi interagent integration
-
-Formalize its effective identity entry as:
-
-```text
-customType: inter-agent:effective-state
-```
-
-```ts
-interface EffectiveInteragentStateEntry {
-  version: 1;
-  connected: boolean;
-  name?: string;
-  label?: string | null;
-  reason: "connected" | "restored" | "disconnected" | "listener-failed";
-}
-```
-
-Publish it whenever listener connection state changes. Preserve the prior entry format only as a migration input if existing sessions require it.
-
-`pi-workflow` uses the latest valid effective identity entry for participant authorization. A saved but disconnected identity cannot authorize a transition that requires a connected sender.
-
-## Interagent handoff contract
-
-Extend interagent targeted `send` and `custom` frames with optional JSON field `exact: boolean`, defaulting to `false` for current prefix-compatible behavior. Targeted custom frames also accept the existing validated `from_name` override used by direct text helpers. Add helper/CLI flags `--exact` and `--from`; workflow calls always send `exact: true` and the current bound participant identity as `from_name`.
-
-Custom type:
-
-```text
-pi-workflow.handoff.v1
-```
-
-Payload:
-
-```ts
-interface WorkflowHandoffV1 {
-  version: 1;
-  projectKey: string;
-  instanceId: string;
-  revision: number;
-  state: string;
-  ownerSlot: ParticipantSlot;
-  targetIdentity: string;
-  expectedRoleKey?: string;
-  authorizedNextActions: string[];
-  artifactPaths: string[];
-  deliveryId: string;
-}
-```
-
-Sender sequence:
-
-1. validate the lifecycle transition;
-2. commit the transition and its `handoff-pending` record/event atomically at revision R with a new delivery ID;
-3. confirm the exact target is currently listed;
-4. send a payload containing revision R through the interagent helper with exact targeting;
-5. commit `handoff-delivered` or `handoff-failed` as the next record revision without changing lifecycle state;
-6. report the resulting lifecycle state, current record revision, and delivery status.
-
-Recipient sequence:
-
-1. Pi interagent integration preserves `custom_type` and JSON payload in the injected custom message;
-2. the message triggers a Pi turn;
-3. `pi-workflow` refreshes SQLite state during `before_agent_start`;
-4. it requires the same project, instance, target identity, owner, lifecycle state, and delivery ID; the current record revision may be greater than payload revision R only because delivery-status events were committed afterward;
-5. a changed lifecycle state, owner, delivery ID, lower current revision, or other mismatch makes the notification stale and unable to change state;
-6. valid messages inject only current-state instructions and authorized next actions.
-
-Delivery retry does not repeat the lifecycle transition. It atomically replaces the current handoff with a new `deliveryId`, increments `attempt`, sets status to `pending`, and commits record revision R before sending the new payload. The recipient accepts only the latest delivery ID; delayed payloads from earlier attempts become stale. Success or failure then commits the next record revision without changing lifecycle state.
-
-## Pi surface
-
-### User commands
-
-```text
-/workflow
-/workflow start <project> <plan-path>
-/workflow status [project]
-/workflow transition <project> <transition-key> --revision <n>
-/workflow retry-handoff <project>
-/workflow cancel <project> --reason <text>
-/workflow override <project> <transition-key> --revision <n> --reason <text>
-```
-
-Behavior:
-
-- `/workflow` shows concise usage and active project summaries.
-- `start` validates configuration, plan frontmatter, route, artifact path, participant bindings, and absence of another active project workflow before writing anything.
-- In TUI mode, `start`, `cancel`, `override`, and any transition with an unsatisfied user gate show a gate-specific summary and require `ctx.ui.confirm`.
-- In RPC/print modes without interactive confirmation, user-gated commands require an explicit `--confirm` flag and otherwise fail without mutation; an agent-tool transition returns `USER_COMMAND_REQUIRED` with the exact slash command.
-- `status` is read-only and never starts interagent, changes state, or delivers messages.
-- `transition` is the user path for transitions requiring user gate evidence. It must include expected revision.
-- `retry-handoff` requires an existing failed or pending handoff and does not change lifecycle state.
-- `cancel` and `override` require a non-empty reason and generate durable user-command evidence.
-- Errors are concise, typed, and actionable.
-
-### Agent tool
-
-Register one narrow tool named `pi_workflow`:
+Parameters:
 
 ```ts
 {
-  action: "status" | "transition" | "retry_handoff";
+  action: "list" | "list_global" | "read_metadata" | "read";
   project?: string;
-  transition?: string;
-  expectedRevision?: number;
-  evidence?: Record<string, unknown>;
+  workflow?: string;
 }
 ```
 
-Rules:
+Build the parameter schema with `Type.Object`, `Type.Optional`, and `Type.String` imported from the bare `typebox` package. Use `StringEnum` imported from `@earendil-works/pi-ai` for the action enum. Both packages are Pi-provided optional peers; do not rely on one transitively exposing the other.
 
-- `status` is read-only.
-- `transition` is allowed only for a transition authorized to the current connected participant slot.
-- In TUI mode, a transition with an unsatisfied user gate opens one gate-specific confirmation and records `user-confirmation` evidence only when accepted.
-- Without interactive UI, the tool rejects the unsatisfied user gate and tells the agent the exact slash command the user must invoke.
-- `retry_handoff` is allowed only to the current owner and does not repeat the transition.
-- Do not create separate overlapping status, transition, gate, or handoff tools.
+The tool is read-only. It never writes `projects.json`, workflow Markdown, plans, roles, or session state. Prompt guidance also forbids agents from bypassing this boundary with general file-mutation tools; only the user-operated `/workflow` command may change `projects.json`.
 
-### Focused prompt context
+### `list`
 
-During `before_agent_start`, inject only:
+Requirements:
 
-- project key and workflow key/version;
-- current state and revision;
-- current owning slot and concrete identity;
-- local participant slot and effective role validation status;
-- primary artifact path;
-- current state's Markdown instructions;
-- required evidence or blocking reason;
-- legal next lifecycle actions;
-- current handoff failure/pending status when relevant.
+- `project` is required and must be a valid exact project ID.
+- Load and validate `projects.json`.
+- Return every role and configured workflow for that project in one result.
+- Group workflows by configured role.
+- Include compact normalized metadata for each valid workflow:
+  - ID;
+  - title;
+  - summary;
+  - managing roles;
+  - `use_when`;
+  - `avoid_when`;
+  - route names.
+- Mark missing or invalid workflows inline without dropping them.
+- Mark configured roles absent from the global role filename scan as `[unavailable]`.
+- Include catalog/config warnings after the complete project list.
+- An unknown project returns `PROJECT_NOT_FOUND` and names configured project IDs.
+- An empty project workflow list is a valid result and tells the agent the user can configure it with `/workflow`.
 
-Do not inject full definitions, transition history, unrelated workflow instructions, all project plans, deferred ideas, or other projects' active state.
+### `list_global`
 
-Refresh context on session attachment, incoming handoff-triggered turns, and successful transitions. Agents do not poll.
+- Return compact normalized metadata for every valid global workflow in one result.
+- Include invalid-file diagnostics.
+- Do not read or return Markdown bodies.
+- Prompt guidance, not runtime state, requires explicit user permission before an agent calls this action.
+- `/workflow` may inspect the same metadata without a separate permission because the user directly invoked the configuration command.
 
-## Package layout
+### `read_metadata`
 
-Create this structure:
+- `workflow` is required and must be an exact workflow ID.
+- A missing ID returns `WORKFLOW_NOT_FOUND`.
+- A present file with invalid frontmatter or metadata returns `INVALID_WORKFLOW` with its bounded diagnostics and no partial metadata.
+- Return a valid workflow's complete parsed frontmatter plus source path.
+- Do not return the Markdown body.
+- If `project` is supplied, also state which configured project roles reference the workflow.
+- Prompt guidance requires explicit permission before reading metadata for a workflow outside the project workflow list.
+
+### `read`
+
+- `workflow` is required and must be an exact workflow ID.
+- Return the complete raw Markdown file, including frontmatter and body.
+- If `project` is supplied, state whether and where it is configured before the raw content.
+- Prompt guidance allows this action only after the user approves using that workflow or directly asks to read it.
+- Do not infer, attach, start, or persist anything after reading.
+
+### Errors
+
+Use typed internal errors and concise actionable tool text. Required codes:
+
+- `INVALID_ARGUMENT`;
+- `INVALID_ID`;
+- `PROJECT_NOT_FOUND`;
+- `WORKFLOW_NOT_FOUND`;
+- `INVALID_PROJECTS_FILE`;
+- `UNSUPPORTED_PROJECTS_VERSION`;
+- `INVALID_WORKFLOW`;
+- `WORKFLOW_TOO_LARGE`;
+- `CATALOG_TOO_LARGE`;
+- `CONFIG_CHANGED`;
+- `READ_FAILED`;
+- `WRITE_FAILED`;
+- `UI_UNAVAILABLE`.
+
+Never expose unrelated Pi settings, credentials, complete project context, or role bodies in errors or tool results.
+
+## Prompt-guidance contract
+
+Use the tool's `promptSnippet` and `promptGuidelines`. Do not inject session messages or modify the entire system prompt in V1.
+
+The guidance must communicate all of these rules clearly and name `pi_workflow` in every bullet where Pi requires tool-specific attribution:
+
+1. Before recommending a workflow, state briefly that you will list the project's workflows, then call `pi_workflow` action `list` once for the exact project.
+2. Use the project workflow list by default.
+3. Base recommendations on the bulk metadata; do not read every workflow.
+4. Do not call `read_metadata` separately for every project workflow. Use it only when the bulk result lacks a material detail needed for the user's request or the user asks for that workflow's metadata.
+5. Never call `pi_workflow` action `list_global` unless the user explicitly permitted global-catalog investigation.
+6. If no project workflow fits, explain that and ask permission before listing the global catalog.
+7. Never use `read_metadata` on an unconfigured global workflow without explicit user permission.
+8. Never use `read` until the user explicitly approves that workflow or directly asks to read it.
+9. After recommending a workflow, present the required approval as the first standalone numbered item and do not bury or combine it:
+
+   > **1. Workflow approval:** Do you approve using `<workflow-id>`?
+
+10. A direct user instruction such as “Use `full-phase`” is already explicit approval; do not ask redundantly.
+11. Workflow frontmatter in a plan does not by itself replace explicit conversational approval to use the workflow.
+12. Only agents responsible for workflow selection or coordination should investigate workflows. Workers and other roles with no configured workflows execute their assigned instructions without selecting a workflow.
+13. Workflow approval authorizes plan edits required by that approved workflow. Do not edit a plan outside direct user instruction or approved workflow/task guidance.
+14. Never add, remove, or edit project workflow assignments with `pi_workflow` or any general file-mutation tool. Only the user-operated `/workflow` command may change `projects.json`; tell the user to run it.
+15. Treat unavailable-role and missing-workflow markers as diagnostics, not permission to silently rewrite configuration.
+
+These are behavioral guardrails, not technical approval state. Do not add approval tokens, confirmation flags, session entries, or a hidden state machine to enforce them.
+
+## `/workflow` command contract
+
+Register one command:
+
+```text
+/workflow
+```
+
+Description:
+
+> Configure which workflows are available to each workflow-managing role in a project.
+
+V1 has no `/workflow` subcommands. If any non-whitespace arguments are supplied, show `Usage: /workflow` with the command description and return without opening the UI or writing files.
+
+The command requires `ctx.mode === "tui"`. In RPC, JSON, or print mode, return `UI_UNAVAILABLE` without modifying files.
+
+### Interaction
+
+Use built-in Pi TUI components instead of inventing a component framework:
+
+- `SelectList` for project selection;
+- `SelectList` for role selection;
+- `SettingsList` with `on`/`off` values for workflow toggles;
+- `ctx.ui.input` to create a project or enter a custom role ID;
+- `ctx.ui.confirm` before saving staged changes;
+- textual `[unavailable]` or `[invalid]` markers for every known issue;
+- Pi theme `warning` or `error` styling as optional presentation enhancement.
+
+Flow:
+
+1. Load workflow discovery, best-effort global role filenames, and validated `projects.json`.
+2. If `projects.json` is invalid, show the error and stop. Never overwrite it.
+3. Show configured projects plus `Add project…`.
+4. When adding a project:
+   - suggest a lowercase-kebab form of `basename(ctx.cwd)` only as input convenience;
+   - require the user to confirm or replace it;
+   - validate exact lowercase kebab-case;
+   - reject collisions.
+5. After project selection, show configured managing roles plus:
+   - globally present role IDs not yet configured;
+   - `Add role ID…`;
+   - `[unavailable]` on configured role IDs absent from the global role filename scan.
+6. Selecting an unconfigured discovered role stages it with no workflows.
+7. `Add role ID…` accepts any valid lowercase-kebab role ID and does not claim it exists.
+8. After role selection, show every valid global workflow in one searchable `SettingsList` with current `on`/`off` state.
+9. Also show configured missing or invalid workflow IDs as `on` entries with `[missing]` or `[invalid]` markers so the user can remove them.
+10. Stage toggles in memory. Do not write on each toggle.
+11. On close, show a concise before/after summary and ask whether to save.
+12. Cancellation or declined confirmation performs no write.
+13. On save, perform the compare-before-write and atomic-write sequence.
+14. If the selected role has no workflows after saving, remove that role entry from the project workflow list.
+15. Notify the user of the saved project ID, role ID, and workflow IDs.
+
+Opening `/workflow` is explicit user intent to inspect global workflow metadata for configuration. It does not constitute conversational approval to execute any workflow.
+
+## Package architecture
+
+Create this focused structure:
 
 ```text
 AGENTS.md
@@ -868,106 +496,257 @@ package.json
 tsconfig.json
 src/
   index.ts
-  config.ts
+  ids.ts
+  paths.ts
   errors.ts
-  plans.ts
-  context.ts
-  commands.ts
+  metadata.ts
+  catalog.ts
+  projects.ts
   roles.ts
-  identity.ts
-  workflows/
-    types.ts
-    validate.ts
-    load.ts
-    definitions/
-      bounded-work.ts
-      bounded-series.ts
-      seed-planning.ts
-      full-phase.ts
-    instructions/
-      bounded-work/
-      bounded-series/
-      seed-planning/
-      full-phase/
-  engine/
-    types.ts
-    transition.ts
-    participants.ts
-    gates.ts
-  store/
-    types.ts
-    schema.ts
-    sqlite.ts
-  interagent/
-    runtime.ts
-    handoff.ts
-    payload.ts
+  tool.ts
+  command.ts
+  ui/
+    configure.ts
+    components.ts
+  types.ts
 tests/
-  config.test.ts
-  plans.test.ts
-  workflow-definitions.test.ts
-  engine.test.ts
-  participants.test.ts
-  gates.test.ts
-  sqlite.test.ts
-  sqlite-contention.integration.test.ts
-  identity.test.ts
+  ids.test.ts
+  metadata.test.ts
+  catalog.test.ts
+  projects.test.ts
   roles.test.ts
-  handoff.test.ts
+  tool.test.ts
+  command.test.ts
   extension.integration.test.ts
+  fixtures/
+    workflows/
 ```
 
-Keep modules focused. Do not create generic repositories, service locators, plugin registries, adapter frameworks, or abstractions with only one implementation.
+Boundaries:
 
-## Execution workflow and task sequence
+- `ids.ts`: ID validation and input suggestion only.
+- `paths.ts`: catalog/config/role paths derived from `getAgentDir()`, the absolute `PI_WORKFLOW_DIR` isolation override, and injectable pure-test paths.
+- `metadata.ts`: frontmatter parsing and validation.
+- `catalog.ts`: directory discovery, collisions, issues, size limits, and exact lookup.
+- `projects.ts`: `projects.json` parsing, normalization, compare-before-write, and atomic persistence.
+- `roles.ts`: best-effort global role filename discovery only.
+- `tool.ts`: read-only action dispatch and bounded rendering.
+- `command.ts`: `/workflow` registration and orchestration.
+- `ui/`: minimal Pi component composition; no business rules or filesystem access.
+- `index.ts`: load-safe extension registration.
 
-Execution uses the full-phase coordinated route. Tasks are sequential unless a task explicitly says otherwise. Tasks 1 through 6 and 8 through 10 go to fresh Workers, and the Sergeant reviews and commits accepted work before dispatching the next task. Task 7 is the sole routing exception: interagent repository rules require a separately assigned `leader`, who owns that repository's executor dispatch, acceptance, checks, and commits and then reports the completed integration contract back to the Sergeant.
+Do not create repositories, service locators, workflow engines, state-machine abstractions, persistence adapters, interagent clients, role adapters, or plugin systems.
 
-### Task 1 — Package scaffold
+## Dependency and package policy
+
+- Match maintained sibling package conventions.
+- Set package name to `@arcanemachine/pi-workflow`.
+- Require Node.js `>=22.19.0`, matching the current thin sibling baseline. The former Node 24.16 requirement existed only for abandoned SQLite work.
+- Use source-loaded TypeScript with `pi.extensions: ["./src/index.ts"]`.
+- Declare Pi-provided packages as optional peers:
+  - `@earendil-works/pi-ai`;
+  - `@earendil-works/pi-coding-agent`;
+  - `@earendil-works/pi-tui`;
+  - `typebox`.
+- Use only Node built-ins and Pi-provided peer packages at runtime.
+- Do not add YAML, schema, database, state-machine, or UI libraries.
+- Use Vitest, TypeScript, Prettier, and Node types as dev dependencies, aligned with maintained siblings.
+- Package only `src`, `README.md`, `CHANGELOG.md`, and `LICENSE.md`.
+- Do not package tests, `PLAN.md`, `IDEAS.md`, workflow definitions, or user configuration.
+
+## Testing strategy
+
+### Pure tests
+
+Cover:
+
+- lowercase-kebab validation and suggestions;
+- filename-stem IDs with no frontmatter ID;
+- valid and invalid metadata fields;
+- additional metadata preservation;
+- empty body, 32 KiB file limit, 48 KiB rendered-output limit, case collision, symlink, hidden file, nested directory, and deterministic ordering;
+- missing catalog directory;
+- valid, invalid, duplicate, unknown-field, and unsupported-version `projects.json`;
+- normalized stable serialization;
+- atomic save and temporary-file cleanup;
+- `CONFIG_CHANGED` detection;
+- global role filename presence and unavailable configured roles;
+- every tool action and required argument;
+- project grouping and missing/invalid markers;
+- bulk-output size failure without partial omission;
+- command cancellation and no-write behavior.
+
+### Static prompt tests
+
+Assert that registered prompt guidance contains every mandatory guardrail, including:
+
+- project-first bulk listing without per-workflow metadata reads;
+- explicit permission before global listing;
+- full read only after approval;
+- standalone first-numbered workflow approval;
+- no agent configuration writes;
+- no redundant confirmation after direct instruction;
+- no plan edits outside approved guidance;
+- no Worker workflow selection.
+
+### Integration tests
+
+Use temporary injected agent/catalog directories. Do not touch the real global catalog during automated tests.
+
+Verify:
+
+- the extension loads without side effects;
+- an absolute `PI_WORKFLOW_DIR` isolates automated and live-test catalogs, while a relative override is rejected;
+- tool registration and schemas;
+- command registration;
+- list/read behavior through Pi test contexts;
+- configuration UI orchestration with deterministic fake UI responses;
+- a saved config is visible to the next tool call;
+- malformed user files produce diagnostics without hiding valid entries.
+
+### Live acceptance
+
+Before accepting user-facing implementation, run Pi interactively and demonstrate:
+
+1. `/workflow` creates a project, adds an Architect role, and toggles workflows.
+2. Reopening `/workflow` shows the saved state.
+3. A configured role absent from the global role filename scan is visibly marked `[unavailable]`.
+4. A configured missing workflow remains visible and removable.
+5. `pi_workflow list` returns all project workflow metadata in one call.
+6. `pi_workflow list_global` returns metadata without bodies.
+7. `read_metadata` returns complete frontmatter without body.
+8. `read` returns one complete approved workflow.
+9. Prompt guidance causes an agent to ask global-catalog permission and workflow approval correctly.
+10. A Worker with no project workflows follows its assignment without catalog investigation.
+11. Invalid configuration is not overwritten.
+12. Cancellation does not write.
+
+User approval is required before committing user-facing behavior or completing migration.
+
+## Implementation sequence
+
+### Task 1 — Package scaffold and deterministic catalog core
 
 **Repository:** `/workspace/projects/pi/packages/pi-workflow`
 
+**Owner:** fresh Worker
+
 **Required reading:**
 
-- `AGENTS.md`
-- `PLAN.md` through **Package layout**
-- `/workspace/projects/pi/AGENTS.md`
-- `/workspace/projects/pi/packages/pi-role/AGENTS.md`
-- `/workspace/projects/pi/packages/pi-role/package.json`
-- `/workspace/projects/pi/packages/pi-role/tsconfig.json`
-- `/workspace/projects/pi/packages/pi-role/CHANGELOG.md`
-- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md`
-- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/packages.md`
+- `AGENTS.md`;
+- this plan through **Testing strategy**;
+- `/workspace/projects/pi/AGENTS.md`;
+- `/workspace/projects/pi/packages/pi-role/AGENTS.md`;
+- `/workspace/projects/pi/packages/pi-role/package.json`;
+- `/workspace/projects/pi/packages/pi-role/tsconfig.json`;
+- `/workspace/projects/pi/packages/pi-role/src/roles.ts` for sibling discovery/error style only;
+- `/workspace/projects/pi/packages/pi-role/tests/roles.test.ts` for sibling test style only;
+- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/packages.md`.
+
+**Allowed package files:**
+
+- `package.json`;
+- `tsconfig.json`;
+- `CHANGELOG.md`;
+- `src/ids.ts`;
+- `src/paths.ts`;
+- `src/errors.ts`;
+- `src/types.ts`;
+- `src/metadata.ts`;
+- `src/catalog.ts`;
+- `src/projects.ts`;
+- `src/roles.ts`;
+- minimal load-safe `src/index.ts`;
+- matching tests and fixtures.
 
 **Implement:**
 
-- sibling-aligned `package.json`, TypeScript, Vitest, and Prettier setup;
-- Node engine `>=24.16.0`;
-- `pi.extensions: ["./src/index.ts"]`;
-- optional Pi peer dependencies;
-- minimal load-safe `src/index.ts` with no workflow behavior yet;
-- `CHANGELOG.md` and package metadata;
-- package file allowlist including source, workflow Markdown assets, README, changelog, and license.
+- package metadata, scripts, peers, engine, and file allowlist;
+- exact path and type contracts;
+- ID validation;
+- workflow metadata parser;
+- catalog discovery and diagnostics;
+- project configuration parsing/normalization/storage;
+- best-effort global role filename discovery;
+- no tool or UI behavior beyond a load-safe extension entrypoint.
 
-**Tests and verification:**
+**Verification:**
 
-- extension module loads without side effects;
-- `npm run typecheck`;
-- `npm run test`;
-- `npm run build`;
-- `npm run format`;
-- `npm pack --dry-run` includes only intended files.
+```bash
+npm run typecheck
+npm run test
+npm run build
+npm run format
+npm pack --dry-run
+```
 
-**Completion:** package is independently buildable and load-safe. Only then add its extension path to the Pi superproject root manifest and run available root checks.
+Inspect the tarball file list. Run tests with temporary directories only.
 
-### Task 2 — Plan parsing and bundled workflow definitions
+**Completion:** all deterministic core contracts pass without a running Pi session or real global catalog. Sergeant reviews, accepts, and commits the child repository task.
 
-**Repository:** `pi-workflow`
+### Task 2 — Read-only agent tool, prompt guardrails, and `/workflow` UI
+
+**Repository:** `/workspace/projects/pi/packages/pi-workflow`
+
+**Owner:** a different fresh Worker
 
 **Required reading:**
 
-- this plan's **Plan artifact contract**, **Workflow-definition contract**, and **Bundled workflow semantics**;
+- `AGENTS.md`;
+- this plan's **Agent tool contract**, **Prompt-guidance contract**, **`/workflow` command contract**, and **Testing strategy**;
+- accepted Task 1 implementation and tests;
+- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md`;
+- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/tui.md`;
+- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/tools.ts` for `SettingsList` usage;
+- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/preset.ts` for `SelectList` usage;
+- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/questionnaire.ts` for bounded custom UI composition.
+
+Read the named Pi Markdown documentation completely and follow its directly relevant UI cross-references before implementing.
+
+**Allowed files:**
+
+- `src/index.ts`;
+- `src/tool.ts`;
+- `src/command.ts`;
+- `src/ui/configure.ts`;
+- `src/ui/components.ts`;
+- narrowly required Task 1 corrections;
+- matching tests.
+
+**Implement:**
+
+- the single four-action read-only tool;
+- bounded compact output and structured details;
+- exact prompt snippet and guardrails;
+- the single `/workflow` command;
+- staged project/role/workflow configuration UI;
+- cancellation, confirmation, unavailable markers, and conflict-safe saving;
+- no session entries, state injection, workflow execution, or additional commands.
+
+**Deterministic verification:** run all package checks and dry-run packaging.
+
+**Live acceptance gate:** Sergeant creates a disposable absolute catalog directory with representative workflow and project fixtures, starts Pi with `PI_WORKFLOW_DIR=<absolute-temp-dir> pi -e ./src/index.ts`, prepares the live scenarios from **Live acceptance**, demonstrates them, and obtains explicit user approval. Remove the disposable directory afterward. Do not commit Task 2 before that approval. If the user requests corrections, return the same task to its Worker, rerun checks, and repeat acceptance.
+
+**Completion:** user-approved tool and UI behavior are committed coherently in the child repository.
+
+### Task 3 — Global workflow migration and Practorium adoption
+
+**Areas:**
+
+- global catalog under `join(getAgentDir(), "workflows")`;
+- `/workspace/projects/practorium` documentation and agent workflow material;
+- `pi-workflow` documentation only where migration reveals an in-scope correction.
+
+**Owner:** a different fresh Worker coordinated by the Sergeant
+
+**Required reading:**
+
+- `/workspace/AGENTS.md`;
 - `/workspace/projects/practorium/AGENTS.md`;
+- `/workspace/projects/practorium/.agents/roles.yaml`;
+- `/workspace/projects/practorium/.agents/roles/architect.md`;
+- `/workspace/projects/practorium/.agents/roles/sergeant.md`;
+- `/workspace/projects/practorium/.agents/roles/worker.md`;
 - `/workspace/projects/practorium/.agents/workflows.yaml`;
 - `/workspace/projects/practorium/.agents/workflows.schema.json`;
 - `/workspace/projects/practorium/.agents/workflows/README.md`;
@@ -987,245 +766,75 @@ Execution uses the full-phase coordinated route. Tasks are sequential unless a t
 - `/workspace/projects/practorium/.agents/workflows/templates/sergeant-closeout-task.md`;
 - `/workspace/projects/practorium/.agents/workflows/templates/sergeant-review-task.md`;
 - `/workspace/projects/practorium/.agents/workflows/templates/user-acceptance-demo.md`;
-- `/workspace/projects/practorium/.agents/workflows/templates/worker-task.md`.
+- `/workspace/projects/practorium/.agents/workflows/templates/worker-task.md`;
+- `/workspace/projects/practorium/.agents/scripts/validate-schemas`;
+- `/workspace/projects/practorium/package.json`;
+- this plan's **Workflow Markdown contract**, **Prompt-guidance contract**, and **Live acceptance** requirements.
+
+The Worker reads its matching supplement first during startup. This migration task then explicitly authorizes the Architect and Sergeant supplements only to identify and update their workflow-catalog references. The Sergeant follows its own startup and review rules separately.
 
 **Implement:**
 
-- plan frontmatter parser and path validation;
-- typed definition structures and hand-written validators;
-- four version-1 bundled definitions;
-- generic current-state Markdown instructions;
-- route responsibility maps, including explicit Sergeant responsibility reassignment on direct routes.
+- create self-contained global `bounded-work.md`, `bounded-series.md`, `seed-planning.md`, and `full-phase.md` files;
+- move selection metadata into each file's frontmatter using the exact contract;
+- set `managing_roles` exactly as follows, derived from the existing planning/coordinating/review responsibilities: `bounded-work` → `architect`, `sergeant`; `bounded-series` → `architect`, `sergeant`; `seed-planning` → `architect`; `full-phase` → `architect`, `sergeant`;
+- keep the body generic but complete enough that an approved workflow can be followed without another global workflow-catalog read;
+- do not include Practorium product rules or absolute project paths in global workflow files;
+- configure `practorium` in `projects.json`:
+  - Architect: all four workflows;
+  - Sergeant: `bounded-work`, `bounded-series`, and `full-phase`;
+  - no Worker entry;
+- update Practorium guidance and schema-validation scripts to use the project workflow list and selected global Markdown;
+- retain project-specific role supplements, templates, product rules, and active plans where they remain useful;
+- remove duplicated Practorium catalog/schema/detail authority only after the live migration is accepted;
+- preserve `docs/ideas/agent-workflow-priming.md` unchanged unless the user explicitly requests an edit.
 
-**Do not:** add user-authored definitions, inheritance, overlays, or project instructions.
+**Do not:**
 
-**Tests:** every invariant listed in the definition contract, valid/invalid plan fixtures, route responsibility completeness, all state reachability, and exact conversion of the normative lifecycle obligations.
+- migrate product-specific guidance into global workflows;
+- create project-local workflow definitions;
+- add paths to `projects.json`;
+- change Practorium product code;
+- remove active plan or template material still required by project guidance.
 
-**Completion:** definitions load and validate without SQLite or a running Pi session.
+**Verification:**
 
-### Task 3 — SQLite store
+- run `pi-workflow` package checks;
+- run Practorium `npm run check`;
+- run catalog discovery against the real global files;
+- verify `pi_workflow list` for `practorium` returns the expected role groupings;
+- verify each global workflow can be read only after the intended approval interaction;
+- run `git -C /workspace status --short` and `git check-ignore` for the created global catalog files; if those files are tracked by the workspace repository, commit only the approved catalog files there, and otherwise leave them as user configuration.
 
-**Repository:** `pi-workflow`
+**User acceptance gate:** demonstrate the migrated `/workflow` list, project tool listing, one workflow recommendation/approval/read sequence, and one Worker handoff that does not invoke workflow discovery. Obtain explicit user approval before deleting duplicated Practorium catalog files or committing user-facing migration.
 
-**Required reading:**
+**Completion:** accepted global workflows and Practorium guidance have one clear catalog authority. Commit each repository coherently, child repositories before any parent pointers. Do not commit private runtime data or unrelated global agent files.
 
-- this plan's **State and storage**, **Runtime record contract**, and **SQLite contract**;
-- `https://nodejs.org/download/release/v24.16.0/docs/api/sqlite.html` sections for `DatabaseSync`, constructor timeout, `exec`, `prepare`, `StatementSync.run`, and `isTransaction`.
+### Task 4 — Documentation, superproject integration, and release readiness
 
-**Implement:**
+**Repositories:** `/workspace/projects/pi/packages/pi-workflow`, then `/workspace/projects/pi`
 
-- platform state-directory resolution;
-- schema creation and version checks;
-- create/load/list-active/read-history operations;
-- atomic expected-revision mutation;
-- event append in the same transaction;
-- one-active-workflow-per-project enforcement;
-- typed serialization validation at the storage boundary;
-- actionable busy, stale, corruption, and version errors.
-
-**Tests:** temporary databases, restart/reopen recovery, two project isolation, active uniqueness, rollback, stale revisions, event ordering, unsupported schema version, malformed stored JSON, and a real two-process contention test under Node 24.16.
-
-**Completion:** storage semantics are deterministic without Pi or interagent.
-
-### Task 4 — Pure lifecycle engine
-
-**Repository:** `pi-workflow`
-
-**Required reading:**
-
-- this plan's **Workflow-definition**, **Runtime record**, and **Transition-engine** contracts;
-- Task 2 definitions and Task 3 store interfaces.
-
-**Implement:**
-
-- instance creation model;
-- transition lookup and deterministic validation order;
-- actor slot and participant checks;
-- effective-role mismatch handling;
-- distinct gate evidence;
-- blocking, correction, cancellation, override, and terminal behavior;
-- Worker identity allocation without task-level FSM transitions;
-- transition and handoff event construction.
-
-**Tests:** legal path for each route and workflow; every rejection code; separate gate keys; stale requests; correction returns; terminal rejection; override reason; role matched/mismatched/inactive/unverified; fresh Worker allocation; and no Worker FSM requirement.
-
-**Completion:** engine transitions are pure and exhaustively tested.
-
-### Task 5 — Configuration, commands, tool, and context
-
-**Repository:** `pi-workflow`
+**Owner:** a different fresh Worker
 
 **Required reading:**
 
-- this plan's **Workspace configuration**, **Pi surface**, and **Focused prompt context**;
-- Pi `docs/extensions.md`, `docs/settings.md`, and `docs/session-format.md`;
-- Pi examples `plan-mode`, `questionnaire.ts`, and `todo.ts` only for current API usage.
-
-**Implement:**
-
-- settings loading and project registry;
-- workspace and project-path resolution;
-- user commands exactly as specified;
-- the single `pi_workflow` tool;
-- TUI confirmation and noninteractive `--confirm` behavior;
-- session attachment and focused prompt injection;
-- read-only status behavior;
-- typed error rendering.
-
-**Tests:** configuration precedence, symlink/path containment, overlapping roots, commands with/without UI, user-only gate rejection from tools, no mutation on failed confirmation, context content boundaries, and two registered projects.
-
-**Completion:** one process can create, inspect, transition, cancel, override, and recover an instance without interagent delivery.
-
-### Task 6 — Stable optional `pi-role` effective-state contract
-
-**Repositories:** `/workspace/projects/pi/packages/pi-role`, then Pi superproject pointer
-
-**Required reading:**
-
-- `/workspace/projects/pi/packages/pi-role/AGENTS.md`;
-- `/workspace/projects/pi/packages/pi-role/src/index.ts`;
-- `/workspace/projects/pi/packages/pi-role/tests/index.test.ts`;
-- `/workspace/projects/pi/packages/pi-role/tests/rpc.integration.test.ts`;
-- this plan's **Effective role and identity contracts**.
-
-**Implement:**
-
-- `pi-role:effective-state` version-1 entries;
-- publication after startup resolution and every role mutation;
-- active/inactive/unavailable semantics exactly as specified;
-- exported pure parser and type helpers for the effective entry contract, without a mutable cross-extension singleton;
-- preservation of existing state entries and behavior.
-
-**Tests:** new session, explicit activation, reload, disable, resume/restore, unavailable role file, malformed entry, and RPC visibility.
-
-**Verification:** full `pi-role` checks and package dry run. Commit `pi-role` before its superproject pointer.
-
-**Completion:** `pi-workflow` can determine reliable effective role from session entries when `pi-role` is installed.
-
-### Task 7 — Interagent exact custom-handoff support
-
-**Repositories:** `/workspace/projects/inter-agent` and its Pi integration
-
-**Routing:** The user assigns a fresh interagent session the `leader` role. That leader uses this task as the fixed product/architecture boundary, updates the repository's active planning state as required, prepares bounded executor packets, obtains only the dispatch authorization required by interagent's repository workflow, accepts and commits verified work, and returns the final evidence to the `pi-workflow` Sergeant. Executors do not make the protocol or product decisions recorded here.
-
-**Required reading:**
-
-- `/workspace/projects/inter-agent/AGENTS.md`;
-- `/workspace/projects/inter-agent/.agents/roles/leader.md`;
-- `/workspace/projects/inter-agent/.agents/PLAN.md`;
-- `/workspace/projects/inter-agent/integrations/pi/AGENTS.md`;
-- `/workspace/projects/inter-agent/ARCHITECTURE.md`;
-- `/workspace/projects/inter-agent/spec/asyncapi.yaml`;
-- `/workspace/projects/inter-agent/spec/schemas/send.json`;
-- `/workspace/projects/inter-agent/spec/schemas/custom.json`;
-- `/workspace/projects/inter-agent/spec/schemas/msg.json`;
-- `/workspace/projects/inter-agent/src/inter_agent/core/server.py`;
-- `/workspace/projects/inter-agent/src/inter_agent/core/send.py`;
-- `/workspace/projects/inter-agent/integrations/pi/src/index.ts`;
-- `/workspace/projects/inter-agent/tests/conformance/test_target_resolution.py`;
-- `/workspace/projects/inter-agent/tests/conformance/test_custom_passthrough.py`;
-- `/workspace/projects/inter-agent/tests/test_pi_extension_static.py`;
-- `/workspace/projects/inter-agent/tests/integration/test_pi_adapter_live.py`;
-- this plan's **Interagent handoff contract**.
-
-**Implement:**
-
-- backward-compatible optional exact-target resolution for targeted direct and custom sends;
-- helper/CLI support for structured exact custom sends;
-- Pi preservation of custom type and JSON payload in display details and LLM context;
-- stable `inter-agent:effective-state` entries;
-- no workflow policy in interagent;
-- no pub/sub changes.
-
-**Tests:** exact missing target does not prefix-route; ordinary prefix behavior remains compatible; structured payload round-trip; Pi custom-message injection; identity entry connect/restore/disconnect/failure; malformed/oversized payload errors; live delivery.
-
-**Verification:** `./run-checks.sh` plus Pi integration typecheck/build/format and focused live tests. Commit interagent coherently before any consumer pointer or dependency update.
-
-**Completion:** structured exact workflow notifications can reach Pi and expose reliable local identity state.
-
-### Task 8 — End-to-end workflow handoffs
-
-**Repository:** `pi-workflow`
-
-**Required reading:**
-
-- this plan's **Interagent handoff contract**;
-- accepted Task 5 command/context code;
-- accepted Task 7 helper and Pi contracts.
-
-**Implement:**
-
-- helper runtime resolution matching interagent's documented precedence;
-- payload validation;
-- exact target presence and delivery;
-- pending/delivered/failed event persistence;
-- retry without duplicate transition;
-- recipient authority refresh;
-- stale/mismatched handoff handling;
-- identity and optional role enforcement.
-
-**Tests:** offline target, exact-target collision protection, helper failure, stale payload, wrong project/recipient/revision, retry, server restart, Pi reload, resumed session, cloned-name collision, Architect-to-Sergeant, Sergeant-to-Architect, and direct Architect-to-Worker.
-
-**Completion:** separate Pi processes advance macro ownership through authoritative state and structured notifications.
-
-### Task 9 — Practorium migration and real acceptance
-
-**Allowed areas:** `/workspace/.pi/settings.json`; `/workspace/projects/practorium/.agents/`; `/workspace/projects/practorium/plans/`; `/workspace/projects/practorium/docs/`; `/workspace/projects/pi/packages/pi-workflow/README.md`; and `/workspace/projects/pi/packages/pi-workflow/CHANGELOG.md`. Do not change Practorium product code during migration unless the selected real acceptance plan independently requires it.
-
-**Required reading:**
-
-- `/workspace/projects/practorium/AGENTS.md`;
-- `/workspace/projects/practorium/.agents/roles/architect.md`;
-- `/workspace/projects/practorium/.agents/roles/sergeant.md`;
-- `/workspace/projects/practorium/.agents/roles/worker.md`;
-- `/workspace/projects/practorium/.agents/workflows.yaml`;
-- `/workspace/projects/practorium/.agents/workflows/README.md`;
-- `/workspace/projects/practorium/.agents/workflows/bounded-work.md`;
-- `/workspace/projects/practorium/.agents/workflows/bounded-series.md`;
-- `/workspace/projects/practorium/.agents/workflows/seed-planning.md`;
-- `/workspace/projects/practorium/.agents/workflows/full-phase.md`;
-- the exact real Practorium plan selected by the user for acceptance;
-- this plan's migration and acceptance requirements.
-
-**Implement:**
-
-- `/workspace` registry configuration for Practorium and intended projects;
-- retained Practorium-specific supplements and product boundaries;
-- removal of duplicated macro lifecycle authority only after extension behavior is proven;
-- migration documentation and recovery instructions;
-- no removal of `docs/ideas/agent-workflow-priming.md`.
-
-**Acceptance run:** execute a real user-facing full phase through Architect planning, Sergeant execution with multiple fresh Workers, architecture acceptance or correction, user acceptance, and Sergeant closeout. Also exercise one direct bounded workflow and two concurrent registered projects.
-
-**Completion:** user explicitly accepts the live behavior. Do not integrate or close user-facing migration before that acceptance.
-
-### Task 10 — Release readiness
-
-**Repositories:** `/workspace/projects/pi/packages/pi-workflow`; `/workspace/projects/pi`; `/workspace/projects/pi/packages/pi-role` only if Task 6 release metadata remains pending; and `/workspace/projects/inter-agent/integrations/pi` only if Task 7 release metadata remains pending.
-
-**Required reading:**
-
-- `/workspace/projects/pi/packages/pi-workflow/AGENTS.md`;
-- `/workspace/projects/pi/packages/pi-workflow/README.md`;
-- `/workspace/projects/pi/packages/pi-workflow/CHANGELOG.md`;
-- `/workspace/projects/pi/packages/pi-workflow/package.json`;
+- `AGENTS.md`;
+- `README.md`;
+- `CHANGELOG.md`;
+- `package.json`;
+- accepted Tasks 1 through 3 and their verification evidence;
 - `/workspace/projects/pi/AGENTS.md`;
 - `/workspace/projects/pi/README.md`;
 - `/workspace/projects/pi/package.json`;
-- `/workspace/projects/pi/packages/pi-role/AGENTS.md` when its release metadata remains in scope;
-- `/workspace/projects/pi/packages/pi-role/README.md`;
-- `/workspace/projects/pi/packages/pi-role/CHANGELOG.md`;
-- `/workspace/projects/pi/packages/pi-role/package.json`;
-- `/workspace/projects/inter-agent/integrations/pi/AGENTS.md` when its release metadata remains in scope;
-- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/packages.md`;
-- accepted implementation and migration evidence produced by Tasks 1 through 9.
+- `/usr/local/share/npm-global/lib/node_modules/@earendil-works/pi-coding-agent/docs/packages.md`.
 
 **Implement:**
 
-- final README usage, configuration, lifecycle, recovery, command, and troubleshooting documentation;
-- changelog and npm metadata;
-- final superproject extension and package-list integration;
-- removal of stale planning-only wording while preserving this durable architecture record or replacing it with equivalent maintained documentation.
+- final user documentation for catalog files, metadata, project configuration, `/workflow`, tool actions, guardrails, errors, and recovery;
+- accurate changelog and package metadata;
+- Pi superproject extension path and package listing;
+- no stale planned-FSM language;
+- no bundled workflow definitions.
 
 **Verification:**
 
@@ -1237,79 +846,92 @@ npm run format
 npm pack --dry-run
 ```
 
-Run Pi superproject pnpm checks, interagent checks for changed integration surfaces, live Pi natural-session scenarios, clean-working-tree checks, and tarball inspection. Exercise the minimum Node 24.16 runtime.
+Then run available Pi superproject pnpm checks, revalidate the minimum Node 22.19 runtime, inspect the tarball, run the final live scenarios, and confirm clean relevant working trees.
 
-**Completion:** verified, documented, explicitly user-accepted, and ready for a separately authorized publish/release process.
+If pnpm is unavailable, report that exact environmental blocker rather than substituting npm for root pnpm checks.
 
-## Required acceptance scenarios
+**Completion:** the package is verified and ready for a separately authorized push/publish/release. Commit the child package before the superproject pointer. Do not push or publish.
 
-The final verification must demonstrate:
+## Acceptance scenarios
 
-1. Architect starts a full phase from a valid approved plan.
-2. Exact structured handoff reaches the configured Sergeant.
-3. Sergeant coordinates multiple substantial tasks through distinct fresh Workers without Worker FSM calls.
-4. Integrated execution reaches architecture acceptance.
-5. Architect accepts or returns it through a legal correction path.
-6. A user-facing phase cannot advance without distinct user acceptance evidence.
-7. Sergeant closes an accepted phase.
-8. Direct bounded work runs Architect-to-Worker without Sergeant.
-9. Wrong participant and known wrong-role transitions are rejected.
-10. Missing `pi-role` reports unverified status without making the package unusable.
-11. Reading approval cannot satisfy route, execution, user acceptance, architecture acceptance, override, or commit gates.
-12. Two registered projects maintain isolated active workflows.
-13. Two processes racing the same revision produce one winner and one stale-revision rejection.
-14. Restarted Pi and interagent processes recover state from SQLite rather than prose.
-15. A failed handoff is retryable without duplicating its transition.
-16. An absent exact target cannot be replaced by a unique prefix match.
-17. A stale handoff notification cannot overwrite or regress authority.
+Final evidence must cover all of the following:
+
+1. A user opens `/workflow` and sees configured projects.
+2. A user creates a lowercase-kebab project ID without storing a path.
+3. A user selects or enters a managing role.
+4. A user toggles all desired workflows in one searchable settings view.
+5. Cancellation writes nothing.
+6. A concurrent file change causes `CONFIG_CHANGED` rather than overwrite.
+7. A configured missing workflow remains visible and removable.
+8. Best-effort missing global roles are marked without blocking configuration.
+9. Valid entries remain usable when another workflow file is invalid.
+10. `list` returns all project workflow metadata in one call, grouped by role.
+11. `list_global` returns all global metadata without bodies.
+12. `read_metadata` returns complete frontmatter without a body.
+13. `read` returns exactly one complete workflow Markdown file.
+14. An agent lists project workflows before recommending one.
+15. An agent does not inspect the global catalog until the user explicitly permits it.
+16. An agent asks workflow approval as the first standalone numbered item.
+17. A direct user instruction to use a workflow is not redundantly reconfirmed.
+18. An agent reads the full workflow only after approval or a direct read request.
+19. A Worker with no configured workflow-management responsibility does not investigate workflows.
+20. Approved workflow-required plan edits proceed without a redundant permission gate; unrelated plan edits do not.
+21. Practorium uses the global catalog and project workflow list without duplicate selection authority.
+22. Package and root checks pass at the required runtime baseline.
 
 ## Explicit non-goals
 
 Do not implement:
 
-- pub/sub workflow channels;
-- filesystem handoffs;
-- alternate transports;
-- a workflow daemon;
-- dashboards or a multi-project control-plane TUI;
-- remote or cross-machine state;
-- multiple workflows in one registered project;
-- parallel workflows or Git worktree orchestration;
-- task dependency DAGs;
-- nested workflows;
-- arbitrary user-authored definitions;
-- definition inheritance or overlays;
-- automatic role activation;
-- capability-tier Worker routing;
-- per-tool, per-file, per-task, or per-Worker FSM transitions;
-- bundled Practorium product instructions;
-- migration tooling beyond what the first persisted schema requires;
-- release or publish automation beyond sibling conventions.
-
-See `IDEAS.md` for deferred directions and promotion triggers.
+- a workflow FSM or transition engine;
+- SQLite or another database;
+- active workflow state;
+- lifecycle revisions, gates, ownership, or history;
+- session attachment or compaction persistence;
+- workflow approval tokens or enforcement state;
+- plan parsing or plan frontmatter inspection tools;
+- plan editing tools;
+- workflow execution tools;
+- role activation or active-role validation;
+- changes to `pi-role`;
+- interagent protocol or Pi integration changes;
+- structured workflow handoffs;
+- project-root registry paths;
+- project-local workflow catalogs;
+- bundled workflows;
+- recursive workflow directories;
+- workflow ID fields, aliases, or rename migration;
+- arbitrary schema libraries;
+- dashboards, daemons, pub/sub, or alternate transports;
+- remote catalog synchronization;
+- automatic workflow selection;
+- automatic global-catalog investigation;
+- publish or release automation.
 
 ## Stop conditions
 
-Stop and return to the Architect and user only if:
+Stop and return to the Architect and user if:
 
-- a normative source contradicts an accepted boundary in this plan;
-- Pi's current API cannot support a specified command, confirmation, session-entry, or prompt-refresh behavior;
-- Node 24.16 does not pass the real SQLite contention and recovery tests;
-- exact structured interagent delivery requires workflow policy inside interagent rather than the generic transport changes specified here;
-- a required `pi-role` effective-state contract cannot remain optional and declarative;
-- the selected workflow no longer fits the substantive task count or risk;
-- required user-facing acceptance fails or is withheld;
-- a credential, trust, security, destructive migration, or publish decision appears;
-- work would enter an explicit non-goal.
+- Pi cannot provide the documented `SelectList` or `SettingsList` behavior;
+- a single `/workflow` UI cannot safely stage and confirm configuration changes;
+- implementing role presence requires changes to `pi-role`;
+- the extension would need project root paths to satisfy active scope;
+- bulk project or global metadata cannot remain bounded without abandoning the requested one-call listing model;
+- a workflow metadata requirement conflicts with filename-as-ID authority;
+- migration would remove Practorium product guidance or active execution artifacts;
+- user-facing acceptance fails or is withheld;
+- work would enter an explicit non-goal;
+- a credential, destructive migration, trust, push, publish, or release decision appears.
 
-Do not stop for naming, module placement, test fixture structure, ordinary error wording, or other routine implementation details already bounded by this plan and repository conventions.
+Do not stop for routine module placement, local helper naming, fixture structure, exact nonsemantic UI spacing, or ordinary error prose already bounded by this plan.
 
 ## Source-control rules
 
-- Keep commits atomic by task and repository.
-- Workers do not commit unless their assigned workflow explicitly grants that responsibility.
-- Commit child repositories before superproject pointer updates.
+- Keep each task atomic.
 - Stage only current-task files.
-- Do not commit failing checks, generated runtime databases, temporary files, unrelated changes, or work awaiting user acceptance.
-- Do not push or publish without explicit authorization.
-- Use durable Conventional Commit subjects without session, plan, agent, or commit-hash references.
+- Do not commit failing checks, temporary catalogs, generated package archives, unrelated global agent files, or private runtime data.
+- User-facing tool, UI, and migration changes require explicit user acceptance before commit.
+- Commit child repositories before superproject pointer updates.
+- Use durable Conventional Commit subjects.
+- Do not mention agents, sessions, plan-task labels, or commit hashes in durable commit messages.
+- Do not push, publish, or release without explicit user authorization.
