@@ -189,9 +189,11 @@ Directory and file behavior:
 - Do not follow directories through symlinks.
 - Sort discovery results by workflow ID.
 - Detect case-insensitive filename collisions and report both entries as invalid rather than picking one.
-- Limit each workflow file to 32 KiB of UTF-8 content. Report an actionable error rather than truncating a workflow body.
+- Check the 32 KiB UTF-8 file limit during catalog discovery before frontmatter parsing. A larger file remains discoverable by ID but is classified as invalid with a `WORKFLOW_TOO_LARGE` diagnostic.
+- `list` and `list_global` retain that ID as an inline invalid entry; `read_metadata` and `read` return `WORKFLOW_TOO_LARGE`, which takes precedence over `INVALID_WORKFLOW`.
+- Never truncate or partially parse an oversized workflow.
 - Limit every rendered tool result to 48 KiB, leaving margin beneath Pi's 50 KiB limit.
-- If a bulk result cannot fit, return `CATALOG_TOO_LARGE`; never silently omit workflows.
+- If a bulk result cannot fit, return `CATALOG_TOO_LARGE`; never silently omit workflows. The agent must stop workflow selection, report that the complete list cannot be represented, and ask the user to reduce the project workflow list through `/workflow`. It must not fall back to per-workflow inspection.
 - If a `read` result cannot fit despite the 32 KiB file limit, return `WORKFLOW_TOO_LARGE` without a partial body. Keep its project-assignment preamble below 2 KiB by reporting role count plus a bounded role list when necessary.
 
 ## `projects.json` contract
@@ -368,14 +370,14 @@ Requirements:
 - A present file with invalid frontmatter or metadata returns `INVALID_WORKFLOW` with its bounded diagnostics and no partial metadata.
 - Return a valid workflow's complete parsed frontmatter plus source path.
 - Do not return the Markdown body.
-- If `project` is supplied, also state which configured project roles reference the workflow.
+- If `project` is supplied, require that exact configured project to exist or return `PROJECT_NOT_FOUND`; otherwise state which of its configured roles reference the workflow.
 - Prompt guidance requires explicit permission before reading metadata for a workflow outside the project workflow list.
 
 ### `read`
 
 - `workflow` is required and must be an exact workflow ID.
 - Return the complete raw Markdown file, including frontmatter and body.
-- If `project` is supplied, state whether and where it is configured before the raw content.
+- If `project` is supplied, require that exact configured project to exist or return `PROJECT_NOT_FOUND`; otherwise state whether and where the workflow is configured before the raw content.
 - Prompt guidance allows this action only after the user approves using that workflow or directly asks to read it.
 - Do not infer, attach, start, or persist anything after reading.
 
@@ -401,9 +403,13 @@ Never expose unrelated Pi settings, credentials, complete project context, or ro
 
 ## Prompt-guidance contract
 
-Use the tool's `promptSnippet` and `promptGuidelines`. Do not inject session messages or modify the entire system prompt in V1.
+Use this exact `promptSnippet`:
 
-The guidance must communicate all of these rules clearly and name `pi_workflow` in every bullet where Pi requires tool-specific attribution:
+> List project workflow metadata and read an approved workflow.
+
+Encode all behavioral rules below as separate `promptGuidelines` entries, not in `promptSnippet`. Every registered guideline must explicitly name `pi_workflow` because Pi appends the entries as flat global bullets. Do not inject session messages or modify the entire system prompt in V1.
+
+The guidelines must communicate all of these rules:
 
 1. Before recommending a workflow, state briefly that you will list the project's workflows, then call `pi_workflow` action `list` once for the exact project.
 2. Use the project workflow list by default.
@@ -423,6 +429,7 @@ The guidance must communicate all of these rules clearly and name `pi_workflow` 
 13. Workflow approval authorizes plan edits required by that approved workflow. Do not edit a plan outside direct user instruction or approved workflow/task guidance.
 14. Never add, remove, or edit project workflow assignments with `pi_workflow` or any general file-mutation tool. Only the user-operated `/workflow` command may change `projects.json`; tell the user to run it.
 15. Treat unavailable-role and missing-workflow markers as diagnostics, not permission to silently rewrite configuration.
+16. If `pi_workflow` returns `CATALOG_TOO_LARGE`, stop selection, explain that a complete bulk comparison is impossible, and ask the user to reduce the project workflow list with `/workflow`; do not inspect workflows one by one.
 
 These are behavioral guardrails, not technical approval state. Do not add approval tokens, confirmation flags, session entries, or a hidden state machine to enforce them.
 
