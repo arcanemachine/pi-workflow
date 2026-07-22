@@ -2,7 +2,7 @@
 
 ## Current status
 
-`pi-workflow` has an approved thin-catalog architecture and a complete implementation recipe in `PLAN.md`. Implementation is in progress; use its progress checkpoint to resume at the exact next action.
+`pi-workflow` V1 is implemented and release-ready: a thin global Markdown workflow catalog, a read-only `pi_workflow` tool with four actions, an atomic restrictive `projects.json`, and a `/workflows` configuration command that creates, renames, and deletes project and role ids via `n`/`r`/`d` hotkeys and assigns workflows through a searchable toggle list.
 
 The former FSM/SQLite/interagent design was abandoned and intentionally deleted. Do not recover it from Git history or reintroduce it during V1.
 
@@ -15,7 +15,7 @@ V1 is a lightweight Markdown workflow catalog and project configuration extensio
 It provides:
 
 - global workflow discovery from `join(getAgentDir(), "workflows")`;
-- central project workflow lists grouped by managing role;
+- central project workflow lists grouped by role;
 - one `/workflows` configuration command;
 - one read-only `pi_workflow` tool;
 - prompt guardrails for project-first discovery and explicit workflow approval.
@@ -54,7 +54,7 @@ Keep modules focused. Do not create generic repositories, adapters, service loca
 
 ## User-facing guardrails
 
-The exact tool and prompt behavior is specified in `PLAN.md`. Preserve these essentials:
+The exact tool and prompt behavior lives in the tool's shipped prompt guidelines and this file's essentials. Preserve these essentials:
 
 - list project workflows in bulk before recommending;
 - do not inspect the global catalog without explicit user permission;

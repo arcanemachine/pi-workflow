@@ -4,7 +4,7 @@ A thin workflow-catalog extension for [Pi](https://pi.dev).
 
 `pi-workflow` lets users maintain a central project workflow list grouped by role, while keeping complete workflow guidance in global Markdown files. Agents list project metadata in bulk, recommend an appropriate workflow from that metadata, obtain explicit user approval, and then read only the selected workflow.
 
-V1 is implemented; release-readiness checks are in progress. The deterministic catalog, read-only `pi_workflow` tool, and `/workflows` configuration command are implemented. [`PLAN.md`](./PLAN.md) holds the V1 plan and progress checkpoint.
+V1 is implemented and release-ready: a deterministic catalog, a read-only `pi_workflow` tool, and a `/workflows` configuration command that manages project and role ids and their workflow assignments.
 
 ## V1 model
 
@@ -87,12 +87,17 @@ Only a project's roles get entries. A role that coordinates or reviews inside an
 
 ### User command: `/workflows`
 
-The command opens a Pi TUI for selecting a project, selecting or entering a role, and toggling workflows through a searchable on/off list.
+The command opens a Pi TUI with three layers: a **project** menu, a **role** menu (within a project), and a **workflow toggle list** (within a role). Changing projects or roles stays staged in memory and is written atomically on save.
 
 - `/workflows` takes no arguments in V1. Any non-whitespace arguments show `Usage: /workflows` and return without opening the UI or writing files.
-- Project IDs are lowercase-kebab and stored without paths.
+- Project and role IDs are lowercase-kebab and stored without paths.
+- **Project and role menus** are lists of ids with single-key hotkeys acting on the hovered item:
+  - `n` — **create** an id. Opens an in-menu text field seeded empty; Enter commits (validates lowercase-kebab and rejects collisions, looping on error), Esc returns to the list with no change. No confirmation.
+  - `r` — **rename** the hovered id. Opens the same text field pre-populated with the current id; Enter commits the rename (validates and collision-checks; an unchanged id is a no-op), Esc returns with no change. Renaming a project carries its roles and workflow assignments over; renaming a role carries its workflow assignments over. No confirmation.
+  - `d` — **delete** the hovered id. Opens a "Delete …?" Yes/No picker with **No as the safe default** (Yes is above No, cursor starts on No). Esc or Enter-on-No cancels; move Up to Yes and Enter to delete. Deleting a project removes it and all its workflow assignments; deleting a role removes it and its assignments. No confirmation on the cancel path.
+  - Enter (no modifier) on a hovered project or role descends to the next layer. A role with no global role filename under `~/.pi/agent/roles/` is shown once configured, annotated `[unavailable]`; configuring a role is done by creating its id with `n` and then assigning workflows.
+- The **workflow layer** uses a searchable on/off toggle list to pick which already-defined global workflows belong to a role. Workflows are defined by their Markdown files; `/workflows` does not create, edit, or delete workflow files.
 - A missing workflow stays visible (labelled `[missing]`) and is removable; an invalid workflow file stays visible (labelled `[invalid]`, with the validation message as the item description) without blocking configuration of valid ones. The `pi_workflow` tool output separately marks invalid entries as `[invalid: CODE, …]`.
-- Best-effort global role filenames under `~/.pi/agent/roles/` are scanned for role presence; a role with no file is marked `[unavailable]` but never blocks configuration.
 - Escape navigates one menu level upward. At the top level, Escape with staged changes opens a save-before-exit confirmation (saving is the default); Escape from that confirmation returns to the menu. With no staged changes, Escape exits immediately. Cancellation writes nothing.
 
 ### Agent tool: `pi_workflow`
