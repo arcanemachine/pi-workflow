@@ -53,3 +53,39 @@ Simplify role-entry wording:
 - menu label: `Add role ID…`;
 - help text: `Enter a role ID.`;
 - avoid language about claiming whether a role exists, is valid, or is active.
+
+## Ctrl+S save-and-exit (plan pending, not for immediate implementation)
+
+Capture only — to be finalized as a plan at the end of the session, after Task 3 closeout and Task 4 work. Do not implement until the user approves the finalized plan.
+
+Behavior:
+
+- Pressing Ctrl+S at any time inside `/workflows`:
+  - when there are no staged changes → exit the configurator immediately, no dialog;
+  - when there are staged workflow-list changes → open a save-and-exit confirmation dialog.
+- The dialog asks `Save staged changes and exit? (y/N)`.
+- Layout: **Yes** is the top item, **No** is the bottom item, and **No is the default selected item** (cursor starts on No).
+- Esc → cancel the dialog and return to the current menu; staged state preserved, no save.
+- Enter on the default **No** → cancel and return to the current menu; staged state preserved, no save.
+- Press Up to reach **Yes**, then Enter → save staged changes atomically and exit the configurator.
+- Safe-default design: the easy path (Esc, or Enter on the default No) preserves state without saving; saving-and-exiting requires deliberately moving Up to Yes.
+
+Open questions to resolve in the finalized plan:
+
+- Whether saved state for the Yes path is identical to the existing Esc confirmation save.
+- Whether Ctrl+S is available from every menu level (project, role, workflow toggles) or only the top-level project menu.
+- Keybinding registration mechanism in pi for command-scoped shortcuts.
+
+## Remove the managing_roles metadata field (upcoming)
+
+`managing_roles` is not a preserved Practorium concept: the original `workflows.schema.json` required `title`, `detail`, `use_when`, `avoid_when`, `routing`, `active_state`, `process_feedback`, and `artifacts`, but never `managing_roles`. The field was introduced during the global Markdown migration as display-only metadata with no enforcement and no functional lineage.
+
+Remove it entirely so the model is just workflows + projects + per-role assignment lists driven by `/workflows`:
+
+- Drop `managing_roles` from the workflow frontmatter schema in `src/metadata.ts` and its validator/tests.
+- Remove the `managing_roles:` block from all four global workflow files under `/workspace/.pi/agent/workflows/` (including the inconsistent Sergeant entries in `bounded-work.md`, `bounded-series.md`, `full-phase.md`).
+- Stop printing the `workflow-managing roles:` line in `src/tool.ts` listing output.
+- Make `Project availability by managing role:` in the listing the sole per-role source, relabeled to a neutral name (for example `Workflows assigned by role:`) since nothing is "managed" anymore.
+- Update tool and metadata tests accordingly.
+
+This supersedes the earlier Sergeant frontmatter edit; leave the existing frontmatter in place until this item removes the field wholesale.
