@@ -182,6 +182,11 @@ export async function showTextInput(
     const input = new Input();
     input.setValue(initial);
     input.focused = true;
+    // Pre-filling for rename leaves the cursor at position 0; move it to the
+    // end so typing appends rather than inserting before the existing id.
+    if (initial.length > 0) {
+      input.handleInput("\x1bOF"); // End key -> cursorLineEnd
+    }
     input.onSubmit = (value) => done(value);
     input.onEscape = () => done(null);
 
