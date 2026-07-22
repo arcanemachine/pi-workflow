@@ -79,17 +79,6 @@ npm pack --dry-run
 
 Use temporary catalog directories in automated tests. Do not mutate the real global workflow catalog from tests.
 
-### Test-runner capture quirk
-
-Vitest invocations intermittently return completely empty captured output (no `Test Files` line, no `END`) despite exiting `0` with passing tests — a harness/pipe capture artifact, not a test failure. Run it with file redirection and a sentinel so an empty capture is obvious, and kill the vitest process pattern with a bracketed class so the `pkill` cannot match its own shell:
-
-```bash
-cd /workspace/projects/pi/packages/pi-workflow && pkill -9 -f '[v]itest' || true; sleep 1
-echo BEFORE; node node_modules/vitest/vitest.mjs run --reporter=default > /tmp/v.log 2>&1; echo "rc=$?"; tail -6 /tmp/v.log
-```
-
-Bare `pkill -9 -f vitest` can match the running shell itself; the `[v]itest` class avoids that. Run `pnpm --filter` from the superproject root `/workspace/projects/pi`, not from inside the package.
-
 New user-facing tool or UI behavior requires live Pi verification and explicit user acceptance before commit.
 
 ## Source control
