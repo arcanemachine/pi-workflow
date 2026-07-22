@@ -412,6 +412,58 @@ describe("workflow configurator", () => {
     );
   });
 
+  it("keeps a freshly created role after backing out of its toggle list without assigning workflows", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: { demo: { roles: {} } },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+
+    let roleItems: string[] = [];
+    const ui = scriptedUI({
+      hotkey: [
+        select("demo"),
+        create(), // role: n -> "planner"
+        select("planner"), // enter the new role's toggle list
+        cancel(), // role: back out of toggles without assigning anything
+        cancel(), // role: back to project
+        cancel(), // project: exit
+      ],
+      // Backing out with no enabled workflows leaves an empty assignment;
+      // because the role persists, that staged change triggers save-on-exit.
+      text: ["planner"],
+      selected: [],
+      selections: ["save"],
+    });
+    const originalHotkey = ui.hotkeySelect;
+    ui.hotkeySelect = async (title, items) => {
+      if (title.startsWith("Select role for"))
+        roleItems = items.map((item) => item.label);
+      return originalHotkey(title, items);
+    };
+
+    await configureProjectWorkflows(context, paths, ui);
+
+    // After backing out of the toggle list, planner must still be listed
+    // (regression: it used to vanish because the empty assignment pruned it).
+    // The [unavailable] suffix is expected: there is no global planner.md
+    // role file in the temp agent dir, so the role is annotated accordingly.
+    expect(roleItems).toContain("planner [unavailable]");
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(
+      `${JSON.stringify(
+        {
+          version: 1,
+          projects: { demo: { roles: { planner: [] } } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  });
+
   it("opens a save-before-exit confirmation on Esc with staged changes and discards when chosen", async () => {
     const paths = setup();
     writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());

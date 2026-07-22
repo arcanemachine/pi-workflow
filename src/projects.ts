@@ -120,7 +120,9 @@ export function normalizeProjectsFile(value: ProjectsFileV1): ProjectsFileV1 {
       const workflowIds = [
         ...new Set(value.projects[projectId].roles[roleId]),
       ].sort();
-      if (workflowIds.length > 0) roles[roleId] = workflowIds;
+      // A role with no assigned workflows still persists; it is removed only
+      // through the /workflows delete action, not by normalization.
+      roles[roleId] = workflowIds;
     }
     projects[projectId] = { roles };
   }

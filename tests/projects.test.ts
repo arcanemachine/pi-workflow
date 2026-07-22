@@ -81,7 +81,7 @@ describe("projects.json validation", () => {
 });
 
 describe("projects.json persistence", () => {
-  it("normalizes project, role, and workflow order and removes empty roles", () => {
+  it("normalizes project, role, and workflow order and preserves empty-workflow roles", () => {
     const input: ProjectsFileV1 = {
       version: 1,
       projects: {
@@ -94,7 +94,7 @@ describe("projects.json persistence", () => {
       version: 1,
       projects: {
         alpha: { roles: {} },
-        zeta: { roles: { architect: ["a", "z"] } },
+        zeta: { roles: { architect: ["a", "z"], worker: [] } },
       },
     });
     expect(serializeProjectsFile(input)).toBe(

@@ -432,8 +432,11 @@ export async function configureProjectWorkflows(
       );
       const after = [...selected].sort();
 
-      if (after.length === 0) delete staged.projects[projectId].roles[roleId];
-      else staged.projects[projectId].roles[roleId] = after;
+      // A role persists once created; only the d-key delete removes it.
+      // Keeping the empty list (rather than pruning) means a freshly created
+      // role is not silently dropped when you back out of its toggle list
+      // without assigning workflows yet.
+      staged.projects[projectId].roles[roleId] = after;
     }
   }
 }
