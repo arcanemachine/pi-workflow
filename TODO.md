@@ -15,7 +15,7 @@ The following user-requested improvements were implemented and committed as part
 
 ### Ctrl+S save-and-exit confirmation
 
-Capture only — finalized as a plan, not yet implemented. Do not implement until the user approves.
+Captured as a plan with approved design decisions; not yet implemented.
 
 Behavior:
 
@@ -29,11 +29,11 @@ Behavior:
 - Press Up to reach **Yes**, then Enter → save staged changes atomically and exit the configurator.
 - Safe-default design: the easy path (Esc, or Enter on the default No) preserves state without saving; saving-and-exiting requires deliberately moving Up to Yes.
 
-Open questions to resolve before implementation:
+Resolved design decisions (approved):
 
-- Whether saved state for the Yes path is identical to the existing Esc confirmation save.
-- Whether Ctrl+S is available from every menu level (project, role, workflow toggles) or only the top-level project menu.
-- Keybinding registration mechanism in pi for command-scoped shortcuts.
+- Yes-path save is identical to the existing Esc confirmation save; reuse that atomic save routine so Ctrl+S only routes to it (no separate save path).
+- Ctrl+S is available from every menu level (project, role, workflow toggles), consistent with Escape's one-level-up navigation.
+- Keybinding mechanism: in-scope interception of the raw Ctrl+S byte (`\x13`) inside each `ctx.ui.custom` `handleInput`, before delegating to the list. This stays within pi-workflow V1's thin scope; do NOT add a command-scoped `AppKeybinding` to pi-coding-agent core (out of V1 scope).
 
 ### Remove the managing_roles metadata field
 
@@ -46,5 +46,9 @@ Remove it entirely so the model is just workflows + projects + per-role assignme
 - Stop printing the `workflow-managing roles:` line in `src/tool.ts` listing output.
 - Make `Project availability by managing role:` in the listing the sole per-role source, relabeled to a neutral name (for example `Workflows assigned by role:`) since nothing is "managed" anymore.
 - Update tool and metadata tests accordingly.
+
+Resolved design decision (approved):
+
+- Full removal as specified below, relabeling the listing's per-role line to a neutral name (for example `Workflows assigned by role:`). Do not keep the field as a tolerated-but-unvalidated extra.
 
 This supersedes the earlier Sergeant frontmatter edit; leave the existing frontmatter in place until this item removes the field wholesale.
