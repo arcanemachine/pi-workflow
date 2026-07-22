@@ -88,23 +88,25 @@ export async function showSelection(
 }
 
 export type HotkeyResult =
-  | { kind: "select"; value: string }
-  | { kind: "cancel" }
-  | { kind: "create" }
-  | { kind: "rename"; value: string }
-  | { kind: "delete"; value: string };
+  | { kind: "select"; value: string; index: number }
+  | { kind: "cancel"; index: number }
+  | { kind: "create"; index: number }
+  | { kind: "rename"; value: string; index: number }
+  | { kind: "delete"; value: string; index: number };
 
 /**
  * A list menu of ids that also accepts create / rename / delete hotkeys.
  * `n` opens a create text field (no hovered item needed). `r` and `d` act on
  * the currently hovered item via `SelectList.getSelectedItem()`. Enter (handled
  * by `SelectList` itself) selects the hovered item to descend. Esc cancels.
+ * `initialIndex` preserves the caller's previous hover across menu re-entry.
  */
 export async function showHotkeySelection(
   ctx: ExtensionCommandContext,
   title: string,
   items: SelectItem[],
   cancelLabel = "back",
+  initialIndex = 0,
 ): Promise<HotkeyResult> {
   return ctx.ui.custom<HotkeyResult>((tui, theme, _keybindings, done) => {
     const container = new Container();
@@ -114,8 +116,20 @@ export async function showHotkeySelection(
     container.addChild(new Text(theme.bold(title), 1, 0));
     const maxVisible = Math.min(Math.max(items.length, 1), 12);
     const list = new SelectList(items, maxVisible, selectListTheme(theme));
-    list.onSelect = (item) => done({ kind: "select", value: item.value });
-    list.onCancel = () => done({ kind: "cancel" });
+    list.setSelectedIndex(initialIndex);
+    const hoveredIndex = () => {
+      const item = list.getSelectedItem();
+      return item ? Math.max(items.indexOf(item), 0) : 0;
+    };
+    let resolved = false;
+    const finish = (result: HotkeyResult) => {
+      if (resolved) return;
+      resolved = true;
+      done(result);
+    };
+    list.onSelect = (item) =>
+      finish({ kind: "select", value: item.value, index: hoveredIndex() });
+    list.onCancel = () => finish({ kind: "cancel", index: hoveredIndex() });
     container.addChild(list);
     container.addChild(
       new Text(
@@ -131,13 +145,6 @@ export async function showHotkeySelection(
       new DynamicBorder((text: string) => theme.fg("accent", text)),
     );
 
-    let resolved = false;
-    const finish = (result: HotkeyResult) => {
-      if (resolved) return;
-      resolved = true;
-      done(result);
-    };
-
     return {
       render: (width) => container.render(width),
       invalidate: () => container.invalidate(),
@@ -145,7 +152,7 @@ export async function showHotkeySelection(
         if (!resolved) {
           const letter = hotkeyLetter(data);
           if (letter === "n") {
-            finish({ kind: "create" });
+            finish({ kind: "create", index: hoveredIndex() });
             return;
           }
           if (letter === "r" || letter === "d") {
@@ -154,6 +161,7 @@ export async function showHotkeySelection(
               finish({
                 kind: letter === "r" ? "rename" : "delete",
                 value: item.value,
+                index: hoveredIndex(),
               });
               return;
             }

@@ -23,6 +23,11 @@ import {
 const EXIT_SAVE = "save";
 const EXIT_DISCARD = "discard";
 
+interface SelectedId {
+  id: string;
+  index: number;
+}
+
 export interface WorkflowConfiguratorUI {
   select(
     title: string,
@@ -33,6 +38,7 @@ export interface WorkflowConfiguratorUI {
     title: string,
     items: SelectItem[],
     cancelLabel?: string,
+    initialIndex?: number,
   ): Promise<HotkeyResult>;
   textInput(
     title: string,
@@ -50,8 +56,8 @@ export function createWorkflowConfiguratorUI(
   return {
     select: (title, items, cancelLabel) =>
       showSelection(ctx, title, items, cancelLabel),
-    hotkeySelect: (title, items, cancelLabel) =>
-      showHotkeySelection(ctx, title, items, cancelLabel),
+    hotkeySelect: (title, items, cancelLabel, initialIndex) =>
+      showHotkeySelection(ctx, title, items, cancelLabel, initialIndex),
     textInput: (title, initial, placeholder) =>
       showTextInput(ctx, title, initial, placeholder),
     noDefaultConfirm: (title, message) =>
@@ -121,40 +127,54 @@ async function deleteProject(
   ui: WorkflowConfiguratorUI,
   config: ProjectsFileV1,
   id: string,
-): Promise<void> {
+): Promise<boolean> {
   const confirmed = await ui.noDefaultConfirm(
     "Delete project",
     `Delete project ${id} and all its workflow assignments?`,
   );
-  if (!confirmed) return;
+  if (!confirmed) return false;
   delete config.projects[id];
   ui.notify(`Deleted project ${id}.`, "info");
+  return true;
 }
 
 async function chooseProject(
   ui: WorkflowConfiguratorUI,
   ctx: ExtensionCommandContext,
   config: ProjectsFileV1,
-): Promise<string | null> {
+  initialIndex = 0,
+): Promise<SelectedId | null> {
+  let index = initialIndex;
   while (true) {
     const projectIds = Object.keys(config.projects).sort();
     const items: SelectItem[] = projectIds.map((id) => ({
       value: id,
       label: id,
     }));
-    const result = await ui.hotkeySelect("Select project", items, "exit");
+    const result = await ui.hotkeySelect(
+      "Select project",
+      items,
+      "exit",
+      index,
+    );
     if (result.kind === "cancel") return null;
-    if (result.kind === "select") return result.value;
+    if (result.kind === "select") {
+      return { id: result.value, index: result.index };
+    }
     if (result.kind === "create") {
       await createProject(ui, ctx, config);
+      index = result.index;
       continue;
     }
     if (result.kind === "rename") {
       await renameProject(ui, config, result.value);
+      index = result.index;
       continue;
     }
     if (result.kind === "delete") {
-      await deleteProject(ui, config, result.value);
+      index = (await deleteProject(ui, config, result.value))
+        ? 0
+        : result.index;
       continue;
     }
   }
@@ -214,14 +234,15 @@ async function deleteRole(
   projectId: string,
   config: ProjectsFileV1,
   id: string,
-): Promise<void> {
+): Promise<boolean> {
   const confirmed = await ui.noDefaultConfirm(
     "Delete role",
     `Delete role ${id} and its workflow assignments?`,
   );
-  if (!confirmed) return;
+  if (!confirmed) return false;
   delete config.projects[projectId].roles[id];
   ui.notify(`Deleted role ${id}.`, "info");
+  return true;
 }
 
 async function chooseRole(
@@ -229,7 +250,9 @@ async function chooseRole(
   projectId: string,
   config: ProjectsFileV1,
   globalRoleIds: Set<string>,
-): Promise<string | null> {
+  initialIndex = 0,
+): Promise<SelectedId | null> {
+  let index = initialIndex;
   while (true) {
     const available = globalRoleIds;
     const configuredRoleIds = Object.keys(
@@ -247,19 +270,26 @@ async function chooseRole(
       `Select role for ${projectId}`,
       items,
       "back",
+      index,
     );
     if (result.kind === "cancel") return null;
-    if (result.kind === "select") return result.value;
+    if (result.kind === "select") {
+      return { id: result.value, index: result.index };
+    }
     if (result.kind === "create") {
       await createRole(ui, projectId, config, configuredSet);
+      index = result.index;
       continue;
     }
     if (result.kind === "rename") {
       await renameRole(ui, projectId, config, result.value, configuredSet);
+      index = result.index;
       continue;
     }
     if (result.kind === "delete") {
-      await deleteRole(ui, projectId, config, result.value);
+      index = (await deleteRole(ui, projectId, config, result.value))
+        ? 0
+        : result.index;
       continue;
     }
   }
@@ -397,9 +427,10 @@ export async function configureProjectWorkflows(
   const globalRoleIds = new Set(roleDiscovery.roleIds);
 
   const staged = cloneProjectsFile(loaded.value);
+  let projectIndex = 0;
   while (true) {
-    const projectId = await chooseProject(ui, ctx, staged);
-    if (projectId === null) {
+    const projectSelection = await chooseProject(ui, ctx, staged, projectIndex);
+    if (projectSelection === null) {
       if (!hasChanges(loaded.value, staged)) return;
       const decision = await confirmExitWithStagedChanges(
         ui,
@@ -413,12 +444,23 @@ export async function configureProjectWorkflows(
         ui.notify("Discarded staged workflow-list changes.", "info");
       return;
     }
+    const { id: projectId, index } = projectSelection;
+    projectIndex = index;
     if (!staged.projects[projectId]) staged.projects[projectId] = { roles: {} };
 
+    let roleIndex = 0;
     while (true) {
-      const roleId = await chooseRole(ui, projectId, staged, globalRoleIds);
-      if (roleId === null) break;
+      const roleSelection = await chooseRole(
+        ui,
+        projectId,
+        staged,
+        globalRoleIds,
+        roleIndex,
+      );
+      if (roleSelection === null) break;
 
+      const { id: roleId, index } = roleSelection;
+      roleIndex = index;
       const before = [
         ...(staged.projects[projectId].roles[roleId] ?? []),
       ].sort();

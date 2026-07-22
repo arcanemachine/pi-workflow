@@ -96,7 +96,7 @@ describe("showHotkeySelection (real ctx.ui.custom, synthetic keys)", () => {
     const ctx = makeCtx();
     const result = showHotkeySelection(ctx.ctx, "Projects", ITEMS);
     pump(ctx, "n");
-    expect(await result).toEqual<HotkeyResult>({ kind: "create" });
+    expect(await result).toEqual<HotkeyResult>({ kind: "create", index: 0 });
   });
 
   it("`r` renames the hovered item", async () => {
@@ -107,6 +107,18 @@ describe("showHotkeySelection (real ctx.ui.custom, synthetic keys)", () => {
     expect(await result).toEqual<HotkeyResult>({
       kind: "rename",
       value: "beta",
+      index: 1,
+    });
+  });
+
+  it("starts on the supplied index when the menu re-opens", async () => {
+    const ctx = makeCtx();
+    const result = showHotkeySelection(ctx.ctx, "Projects", ITEMS, "back", 1);
+    pump(ctx, "r");
+    expect(await result).toEqual<HotkeyResult>({
+      kind: "rename",
+      value: "beta",
+      index: 1,
     });
   });
 
@@ -117,6 +129,7 @@ describe("showHotkeySelection (real ctx.ui.custom, synthetic keys)", () => {
     expect(await result).toEqual<HotkeyResult>({
       kind: "delete",
       value: "alpha",
+      index: 0,
     });
   });
 
@@ -127,12 +140,16 @@ describe("showHotkeySelection (real ctx.ui.custom, synthetic keys)", () => {
     expect(await selectResult).toEqual<HotkeyResult>({
       kind: "select",
       value: "alpha",
+      index: 0,
     });
 
     const cancelCtx = makeCtx();
     const cancelResult = showHotkeySelection(cancelCtx.ctx, "Projects", ITEMS);
     pump(cancelCtx, "\x1b");
-    expect(await cancelResult).toEqual<HotkeyResult>({ kind: "cancel" });
+    expect(await cancelResult).toEqual<HotkeyResult>({
+      kind: "cancel",
+      index: 0,
+    });
   });
 
   it("treats Kitty CSI-u for `n` as create but `a` as inert", async () => {
@@ -140,7 +157,10 @@ describe("showHotkeySelection (real ctx.ui.custom, synthetic keys)", () => {
     const createResult = showHotkeySelection(createCtx.ctx, "Projects", ITEMS);
     // Kitty CSI-u encoding for `n` (codepoint 110) triggers create.
     pump(createCtx, "\x1b[110u");
-    expect(await createResult).toEqual<HotkeyResult>({ kind: "create" });
+    expect(await createResult).toEqual<HotkeyResult>({
+      kind: "create",
+      index: 0,
+    });
 
     const inertCtx = makeCtx();
     const inertResult = showHotkeySelection(inertCtx.ctx, "Projects", ITEMS);

@@ -57,6 +57,7 @@ interface ScriptedOptions {
   /** Workflows returned by every toggle list. */
   selected?: string[];
   inspectToggles?: (items: WorkflowToggleItem[]) => void;
+  onHotkeySelect?: (title: string, initialIndex: number) => void;
   onNotify?: (message: string, type?: string) => void;
 }
 
@@ -69,8 +70,9 @@ function scriptedUI(options: ScriptedOptions): WorkflowConfiguratorUI {
     async select() {
       return selections.shift() ?? null;
     },
-    async hotkeySelect() {
-      return hotkey.shift() ?? { kind: "cancel" };
+    async hotkeySelect(_title, _items, _cancelLabel, initialIndex = 0) {
+      options.onHotkeySelect?.(_title, initialIndex);
+      return hotkey.shift() ?? { kind: "cancel", index: initialIndex };
     },
     async textInput() {
       return text.shift() ?? null;
@@ -88,11 +90,23 @@ function scriptedUI(options: ScriptedOptions): WorkflowConfiguratorUI {
   };
 }
 
-const select = (value: string): HotkeyResult => ({ kind: "select", value });
-const cancel = (): HotkeyResult => ({ kind: "cancel" });
-const create = (): HotkeyResult => ({ kind: "create" });
-const rename = (value: string): HotkeyResult => ({ kind: "rename", value });
-const del = (value: string): HotkeyResult => ({ kind: "delete", value });
+const select = (value: string, index = 0): HotkeyResult => ({
+  kind: "select",
+  value,
+  index,
+});
+const cancel = (index = 0): HotkeyResult => ({ kind: "cancel", index });
+const create = (index = 0): HotkeyResult => ({ kind: "create", index });
+const rename = (value: string, index = 0): HotkeyResult => ({
+  kind: "rename",
+  value,
+  index,
+});
+const del = (value: string, index = 0): HotkeyResult => ({
+  kind: "delete",
+  value,
+  index,
+});
 
 describe("/workflows registration and guards", () => {
   it("registers exactly the workflow command with its approved description", () => {
@@ -462,6 +476,96 @@ describe("workflow configurator", () => {
         2,
       )}\n`,
     );
+  });
+
+  it("keeps the project hover after cancelling a deletion", async () => {
+    const paths = setup();
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: { alpha: { roles: {} }, beta: { roles: {} } },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+    const projectIndices: number[] = [];
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        hotkey: [del("beta", 1), cancel(1)],
+        deleteConfirm: [false],
+        onHotkeySelect(title, initialIndex) {
+          if (title === "Select project") projectIndices.push(initialIndex);
+        },
+      }),
+    );
+
+    expect(projectIndices).toEqual([0, 1]);
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(
+      JSON.stringify(projects),
+    );
+  });
+
+  it("keeps the role hover after cancelling a deletion", async () => {
+    const paths = setup();
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: {
+        demo: { roles: { architect: ["bounded-work"], worker: [] } },
+      },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+    const roleIndices: number[] = [];
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        hotkey: [select("demo"), del("worker", 1), cancel(1), cancel()],
+        deleteConfirm: [false],
+        onHotkeySelect(title, initialIndex) {
+          if (title.startsWith("Select role for"))
+            roleIndices.push(initialIndex);
+        },
+      }),
+    );
+
+    expect(roleIndices).toEqual([0, 1]);
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(
+      JSON.stringify(projects),
+    );
+  });
+
+  it("keeps project and role hovers after backing out of the toggle list", async () => {
+    const paths = setup();
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: {
+        alpha: { roles: {} },
+        beta: { roles: { architect: ["bounded-work"], worker: [] } },
+      },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+    const projectIndices: number[] = [];
+    const roleIndices: number[] = [];
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        hotkey: [select("beta", 1), select("worker", 1), cancel(1), cancel(1)],
+        onHotkeySelect(title, initialIndex) {
+          if (title === "Select project") projectIndices.push(initialIndex);
+          if (title.startsWith("Select role for"))
+            roleIndices.push(initialIndex);
+        },
+      }),
+    );
+
+    expect(roleIndices).toEqual([0, 1]);
+    expect(projectIndices).toEqual([0, 1]);
   });
 
   it("opens a save-before-exit confirmation on Esc with staged changes and discards when chosen", async () => {
