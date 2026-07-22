@@ -5,11 +5,10 @@ Status: Product direction and V1 architecture are approved. Implementation is in
 ## Progress checkpoint
 
 - Task 1 is implemented, verified, and committed in the child repository.
-- Task 2 tool, prompt guidance, and TUI behavior are implemented and accepted. The sole command is `/workflows`, with no compatibility alias; package checks and a live plural-command smoke test passed.
-- The invalid-workflow warning observed during Task 2 acceptance came from the deliberately malformed `broken.md` fixture and demonstrated the intended diagnostic behavior.
-- Next, perform Task 3's required reading and migration.
-- Task 3 still requires its live user-acceptance gate before duplicated Practorium catalog authority is removed or migration work is committed.
-- After Task 3 acceptance, complete Task 4 documentation, superproject integration, minimum-runtime and root validation, final live scenarios, and child-before-parent commits.
+- Task 2 tool, prompt guidance, and TUI behavior are implemented, accepted, and committed. The sole command is `/workflows`, with no compatibility alias; package checks and a live plural-command smoke test passed. The invalid-workflow warning observed during Task 2 acceptance came from the deliberately malformed `broken.md` fixture and demonstrated the intended diagnostic behavior.
+- Task 3 is implemented, accepted, and committed: the global catalog under `join(getAgentDir(), "workflows")`, the four expanded global workflow bodies, and the Practorium migration (local catalog/schema/detail authority removed; role supplements and templates retain only project-specific material; stale plan reading-list entries cleaned). User-approved follow-ups were folded in: spaced expanded listings, plain collapsible tool presentation, active-role candidate prompt guidance, hierarchical Escape navigation, and a save-before-exit confirmation. The extension is registered in the Pi superproject `pi.extensions` list so `/workflows` loads with the superproject.
+- Captured in `TODO.md` as upcoming (not part of remaining V1 scope): a Ctrl+S save-and-exit confirmation, and removal of the display-only `managing_roles` frontmatter field.
+- Remaining V1 work is Task 4 documentation, release-readiness checks, and final live scenarios.
 - Do not push, publish, or release.
 
 ## Purpose of this plan
@@ -103,11 +102,6 @@ Example:
           "bounded-work",
           "full-phase",
           "seed-planning"
-        ],
-        "sergeant": [
-          "bounded-series",
-          "bounded-work",
-          "full-phase"
         ]
       }
     }
@@ -115,7 +109,7 @@ Example:
 }
 ```
 
-Rules:
+In the approved `practorium` configuration only the Architect manages workflows; the Sergeant coordinates and reviews inside an Architect-selected workflow but does not select or manage workflows, so it has no project workflow-list entry. Rules:
 
 - Project IDs and role IDs use the same lowercase kebab-case pattern as workflow IDs.
 - The user chooses project IDs. A directory basename may be suggested, but it is not authoritative until the user confirms it.
