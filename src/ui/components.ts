@@ -2,15 +2,48 @@ import {
   DynamicBorder,
   getSettingsListTheme,
   type ExtensionCommandContext,
+  Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
   Container,
+  decodeKittyPrintable,
+  Input,
   type SelectItem,
   SelectList,
+  type SelectListTheme,
   type SettingItem,
   SettingsList,
   Text,
 } from "@earendil-works/pi-tui";
+
+function selectListTheme(theme: Theme): SelectListTheme {
+  return {
+    selectedPrefix: (text: string) => theme.fg("accent", text),
+    selectedText: (text: string) => theme.fg("accent", text),
+    description: (text: string) => theme.fg("muted", text),
+    scrollInfo: (text: string) => theme.fg("dim", text),
+    noMatch: (text: string) => theme.fg("warning", text),
+  };
+}
+
+/**
+ * Decode a single-keypress `data` buffer into a lowercase action letter
+ * (`n`, `r`, or `d`) when the user pressed exactly that key, regardless of
+ * whether the terminal sent the character raw or via Kitty CSI-u encoding.
+ * Returns undefined for everything else (modifiers, escape sequences, uppercase).
+ */
+function hotkeyLetter(data: string): string | undefined {
+  const kitty = decodeKittyPrintable(data);
+  const candidate =
+    kitty !== undefined && kitty.length === 1
+      ? kitty
+      : data.length === 1
+        ? data
+        : undefined;
+  if (candidate === "n" || candidate === "r" || candidate === "d")
+    return candidate;
+  return undefined;
+}
 
 export async function showSelection(
   ctx: ExtensionCommandContext,
@@ -27,13 +60,7 @@ export async function showSelection(
     const list = new SelectList(
       items,
       Math.min(Math.max(items.length, 1), 12),
-      {
-        selectedPrefix: (text) => theme.fg("accent", text),
-        selectedText: (text) => theme.fg("accent", text),
-        description: (text) => theme.fg("muted", text),
-        scrollInfo: (text) => theme.fg("dim", text),
-        noMatch: (text) => theme.fg("warning", text),
-      },
+      selectListTheme(theme),
     );
     list.onSelect = (item) => done(item.value);
     list.onCancel = () => done(null);
@@ -41,6 +68,179 @@ export async function showSelection(
     container.addChild(
       new Text(
         theme.fg("dim", `↑↓ navigate • enter select • esc ${cancelLabel}`),
+        1,
+        0,
+      ),
+    );
+    container.addChild(
+      new DynamicBorder((text: string) => theme.fg("accent", text)),
+    );
+
+    return {
+      render: (width) => container.render(width),
+      invalidate: () => container.invalidate(),
+      handleInput: (data) => {
+        list.handleInput(data);
+        tui.requestRender();
+      },
+    };
+  });
+}
+
+export type HotkeyResult =
+  | { kind: "select"; value: string }
+  | { kind: "cancel" }
+  | { kind: "create" }
+  | { kind: "rename"; value: string }
+  | { kind: "delete"; value: string };
+
+/**
+ * A list menu of ids that also accepts create / rename / delete hotkeys.
+ * `n` opens a create text field (no hovered item needed). `r` and `d` act on
+ * the currently hovered item via `SelectList.getSelectedItem()`. Enter (handled
+ * by `SelectList` itself) selects the hovered item to descend. Esc cancels.
+ */
+export async function showHotkeySelection(
+  ctx: ExtensionCommandContext,
+  title: string,
+  items: SelectItem[],
+  cancelLabel = "back",
+): Promise<HotkeyResult> {
+  return ctx.ui.custom<HotkeyResult>((tui, theme, _keybindings, done) => {
+    const container = new Container();
+    container.addChild(
+      new DynamicBorder((text: string) => theme.fg("accent", text)),
+    );
+    container.addChild(new Text(theme.bold(title), 1, 0));
+    const maxVisible = Math.min(Math.max(items.length, 1), 12);
+    const list = new SelectList(items, maxVisible, selectListTheme(theme));
+    list.onSelect = (item) => done({ kind: "select", value: item.value });
+    list.onCancel = () => done({ kind: "cancel" });
+    container.addChild(list);
+    container.addChild(
+      new Text(
+        theme.fg(
+          "dim",
+          `n create • r rename • d delete • ↑↓ navigate • enter select • esc ${cancelLabel}`,
+        ),
+        1,
+        0,
+      ),
+    );
+    container.addChild(
+      new DynamicBorder((text: string) => theme.fg("accent", text)),
+    );
+
+    let resolved = false;
+    const finish = (result: HotkeyResult) => {
+      if (resolved) return;
+      resolved = true;
+      done(result);
+    };
+
+    return {
+      render: (width) => container.render(width),
+      invalidate: () => container.invalidate(),
+      handleInput: (data) => {
+        if (!resolved) {
+          const letter = hotkeyLetter(data);
+          if (letter === "n") {
+            finish({ kind: "create" });
+            return;
+          }
+          if (letter === "r" || letter === "d") {
+            const item = list.getSelectedItem();
+            if (item) {
+              finish({
+                kind: letter === "r" ? "rename" : "delete",
+                value: item.value,
+              });
+              return;
+            }
+          }
+        }
+        list.handleInput(data);
+        tui.requestRender();
+      },
+    };
+  });
+}
+
+/**
+ * A single-line text input used for create (empty seed) and rename
+ * (pre-populated via `Input.setValue`). Enter submits the value; Esc cancels
+ * with null. `ctx.ui.input` cannot pre-fill editable text, so this custom
+ * renderer is used instead.
+ */
+export async function showTextInput(
+  ctx: ExtensionCommandContext,
+  title: string,
+  initial: string,
+  placeholder?: string,
+): Promise<string | null> {
+  return ctx.ui.custom<string | null>((tui, theme, _keybindings, done) => {
+    const input = new Input();
+    input.setValue(initial);
+    input.focused = true;
+    input.onSubmit = (value) => done(value);
+    input.onEscape = () => done(null);
+
+    const container = new Container();
+    container.addChild(
+      new DynamicBorder((text: string) => theme.fg("accent", text)),
+    );
+    container.addChild(new Text(theme.bold(title), 1, 0));
+    if (placeholder)
+      container.addChild(new Text(theme.fg("dim", placeholder), 0, 0));
+    container.addChild(input);
+    container.addChild(
+      new Text(theme.fg("dim", "enter confirm • esc cancel"), 1, 0),
+    );
+    container.addChild(
+      new DynamicBorder((text: string) => theme.fg("accent", text)),
+    );
+
+    return {
+      render: (width) => container.render(width),
+      invalidate: () => container.invalidate(),
+      handleInput: (data) => {
+        input.handleInput(data);
+        tui.requestRender();
+      },
+    };
+  });
+}
+
+/**
+ * A Yes/No confirmation picker with No as the safe default: Yes is the top
+ * item, No is the bottom item, and the cursor starts on No. Esc or Enter-on-No
+ * resolve false; moving Up to Yes then Enter resolves true. `ctx.ui.confirm`
+ * has no default-No option, so this custom renderer is used.
+ */
+export async function showNoDefaultConfirm(
+  ctx: ExtensionCommandContext,
+  title: string,
+  message: string,
+): Promise<boolean> {
+  return ctx.ui.custom<boolean>((tui, theme, _keybindings, done) => {
+    const items: SelectItem[] = [
+      { value: "yes", label: "Yes" },
+      { value: "no", label: "No" },
+    ];
+    const container = new Container();
+    container.addChild(
+      new DynamicBorder((text: string) => theme.fg("accent", text)),
+    );
+    container.addChild(new Text(theme.bold(title), 1, 0));
+    container.addChild(new Text(theme.fg("muted", message), 1, 0));
+    const list = new SelectList(items, 2, selectListTheme(theme));
+    list.setSelectedIndex(1); // No is the bottom item; cursor starts on No
+    list.onSelect = (item) => done(item.value === "yes");
+    list.onCancel = () => done(false);
+    container.addChild(list);
+    container.addChild(
+      new Text(
+        theme.fg("dim", "↑↓ navigate • enter select • esc cancel"),
         1,
         0,
       ),

@@ -11,6 +11,7 @@ import {
   configureProjectWorkflows,
   type WorkflowConfiguratorUI,
 } from "../src/ui/configure.js";
+import type { HotkeyResult } from "../src/ui/components.js";
 import type { WorkflowToggleItem } from "../src/ui/components.js";
 import type { ProjectsFileV1 } from "../src/types.js";
 import {
@@ -44,32 +45,54 @@ function fakeContext(mode: "tui" | "rpc" = "tui") {
   };
 }
 
-function scriptedUI(options: {
-  selections: Array<string | null>;
-  inputs?: Array<string | undefined>;
+interface ScriptedOptions {
+  /** Consumed in call order across every project/role hotkey menu. */
+  hotkey?: Array<HotkeyResult>;
+  /** Consumed in call order across every create/rename text field. */
+  text?: Array<string | null>;
+  /** Consumed in call order across every delete confirmation. */
+  deleteConfirm?: Array<boolean>;
+  /** Consumed in call order across every plain `select` (exit-save dialog). */
+  selections?: Array<string | null>;
+  /** Workflows returned by every toggle list. */
   selected?: string[];
-  confirm?: boolean;
   inspectToggles?: (items: WorkflowToggleItem[]) => void;
-}): WorkflowConfiguratorUI {
-  const selections = [...options.selections];
-  const inputs = [...(options.inputs ?? [])];
+  onNotify?: (message: string, type?: string) => void;
+}
+
+function scriptedUI(options: ScriptedOptions): WorkflowConfiguratorUI {
+  const hotkey = [...(options.hotkey ?? [])];
+  const text = [...(options.text ?? [])];
+  const deleteConfirm = [...(options.deleteConfirm ?? [])];
+  const selections = [...(options.selections ?? [])];
   return {
     async select() {
       return selections.shift() ?? null;
     },
-    async input() {
-      return inputs.shift();
+    async hotkeySelect() {
+      return hotkey.shift() ?? { kind: "cancel" };
+    },
+    async textInput() {
+      return text.shift() ?? null;
+    },
+    async noDefaultConfirm() {
+      return deleteConfirm.shift() ?? false;
     },
     async toggles(_title, items) {
       options.inspectToggles?.(items);
       return new Set(options.selected ?? []);
     },
-    async confirm() {
-      return options.confirm ?? false;
+    notify(message, type) {
+      options.onNotify?.(message, type);
     },
-    notify() {},
   };
 }
+
+const select = (value: string): HotkeyResult => ({ kind: "select", value });
+const cancel = (): HotkeyResult => ({ kind: "cancel" });
+const create = (): HotkeyResult => ({ kind: "create" });
+const rename = (value: string): HotkeyResult => ({ kind: "rename", value });
+const del = (value: string): HotkeyResult => ({ kind: "delete", value });
 
 describe("/workflows registration and guards", () => {
   it("registers exactly the workflow command with its approved description", () => {
@@ -118,7 +141,7 @@ describe("workflow configurator", () => {
     await configureProjectWorkflows(
       context,
       paths,
-      scriptedUI({ selections: [null] }),
+      scriptedUI({ hotkey: [cancel()] }),
     );
 
     expect(existsSync(paths.projectsFile)).toBe(false);
@@ -133,8 +156,16 @@ describe("workflow configurator", () => {
       context,
       paths,
       scriptedUI({
-        selections: ["__add-project__", "__add-role__", null, null, "save"],
-        inputs: ["demo", "architect"],
+        hotkey: [
+          create(), // project: n
+          select("demo"), // project: enter (descend)
+          create(), // role: n
+          select("architect"), // role: enter (descend)
+          cancel(), // role: esc (back to project)
+          cancel(), // project: esc (exit)
+        ],
+        text: ["demo", "architect"],
+        selections: ["save"],
         selected: ["bounded-work"],
       }),
     );
@@ -148,7 +179,7 @@ describe("workflow configurator", () => {
     });
   });
 
-  it("removes a project and its workflow assignments on save", async () => {
+  it("deletes a project and its workflow assignments on save via d-key", async () => {
     const paths = setup();
     writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
     const projects: ProjectsFileV1 = {
@@ -165,8 +196,9 @@ describe("workflow configurator", () => {
       context,
       paths,
       scriptedUI({
-        selections: ["__remove-project__", "demo", null, "save"],
-        confirm: true,
+        hotkey: [del("demo"), cancel()],
+        deleteConfirm: [true],
+        selections: ["save"],
       }),
     );
 
@@ -177,7 +209,7 @@ describe("workflow configurator", () => {
     });
   });
 
-  it("keeps a project when removal is cancelled", async () => {
+  it("keeps a project when its delete is cancelled at the No-default picker", async () => {
     const paths = setup();
     writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
     const projects: ProjectsFileV1 = {
@@ -191,11 +223,115 @@ describe("workflow configurator", () => {
       context,
       paths,
       scriptedUI({
-        selections: ["__remove-project__", "demo", null, "discard"],
-        confirm: false,
+        // d on demo, then No at the picker, then esc out. No staged change
+        // (delete was declined), so the configurator exits with no save dialog.
+        hotkey: [del("demo"), cancel()],
+        deleteConfirm: [false],
       }),
     );
 
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(
+      JSON.stringify(projects),
+    );
+  });
+
+  it("creates a project, renames it, deletes the renamed one, and saves", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const { context } = fakeContext();
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        hotkey: [
+          create(), // n: create "alpha"
+          rename("alpha"), // r on alpha: rename alpha -> beta
+          del("beta"), // d on beta: delete it (No-default picker -> Yes)
+          cancel(), // project: esc (exit)
+        ],
+        text: ["alpha", "beta"],
+        deleteConfirm: [true],
+      }),
+    );
+
+    // alpha was created, renamed to beta, then beta was deleted: no
+    // projects survive normalization, so nothing is staged and nothing is
+    // written.
+    expect(existsSync(paths.projectsFile)).toBe(false);
+  });
+
+  it("renames a project and preserves its roles through save", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: { demo: { roles: { architect: ["bounded-work"] } } },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        hotkey: [rename("demo"), cancel()],
+        text: ["demo-renamed"],
+        selections: ["save"],
+      }),
+    );
+
+    const saved = JSON.parse(readFileSync(paths.projectsFile, "utf8"));
+    expect(saved).toEqual({
+      version: 1,
+      projects: { "demo-renamed": { roles: { architect: ["bounded-work"] } } },
+    });
+  });
+
+  it("create project rejects an invalid id, notifies, then commits on a valid one", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const { context } = fakeContext();
+    const notifications: string[] = [];
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        hotkey: [create(), select("demo"), cancel(), cancel()],
+        text: ["Bad Id!", "demo"],
+        selected: [],
+        selections: ["discard"],
+        onNotify: (message) => notifications.push(message),
+      }),
+    );
+
+    expect(notifications).toContain("Project ID must be lowercase kebab-case.");
+  });
+
+  it("create project reports a collision and keeps the existing project", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: { demo: { roles: { architect: ["bounded-work"] } } },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+    const notifications: string[] = [];
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        // n -> "demo" (collision, notify, loop) -> text exhausted -> null (esc)
+        hotkey: [create(), cancel()],
+        text: ["demo"],
+        onNotify: (message) => notifications.push(message),
+      }),
+    );
+
+    expect(notifications).toContain("Project demo already exists.");
     expect(readFileSync(paths.projectsFile, "utf8")).toBe(
       JSON.stringify(projects),
     );
@@ -218,8 +354,9 @@ describe("workflow configurator", () => {
     let roleItems: string[] = [];
 
     const ui = scriptedUI({
-      selections: ["demo", "architect", null, null, "discard"],
+      hotkey: [select("demo"), select("architect"), cancel(), cancel()],
       selected: ["valid"],
+      selections: ["discard"],
       inspectToggles(items) {
         expect(items.map((item) => item.label)).toEqual([
           "invalid [invalid]",
@@ -228,16 +365,48 @@ describe("workflow configurator", () => {
         ]);
       },
     });
-    const originalSelect = ui.select;
-    ui.select = async (title, items) => {
+    const originalHotkey = ui.hotkeySelect;
+    ui.hotkeySelect = async (title, items) => {
       if (title.startsWith("Select role for"))
         roleItems = items.map((item) => item.label);
-      return originalSelect(title, items);
+      return originalHotkey(title, items);
     };
 
     await configureProjectWorkflows(context, paths, ui);
 
     expect(roleItems).toContain("architect [unavailable]");
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(
+      JSON.stringify(projects),
+    );
+  });
+
+  it("creates then deletes a role within a project via n / d hotkeys", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: { demo: { roles: {} } },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        hotkey: [
+          select("demo"),
+          create(), // role: n -> "planner"
+          del("planner"), // role: d on planner -> No-default confirm -> yes
+          cancel(), // role: back to project
+          cancel(), // project: exit (no surviving staged change)
+        ],
+        text: ["planner"],
+        deleteConfirm: [true],
+      }),
+    );
+
+    // planner had no assignments and was deleted; nothing is staged, no write.
     expect(readFileSync(paths.projectsFile, "utf8")).toBe(
       JSON.stringify(projects),
     );
@@ -255,10 +424,16 @@ describe("workflow configurator", () => {
     writeFileSync(paths.projectsFile, JSON.stringify(projects));
     const { context } = fakeContext();
     const ui = scriptedUI({
-      selections: ["demo", "architect", null, null, "discard"],
+      hotkey: [select("demo"), select("architect"), cancel(), cancel()],
+      selections: ["discard"],
       selected: [],
     });
     const titles: string[] = [];
+    const originalHotkey = ui.hotkeySelect;
+    ui.hotkeySelect = async (title, items, cancelLabel) => {
+      titles.push(title);
+      return originalHotkey(title, items, cancelLabel);
+    };
     const originalSelect = ui.select;
     ui.select = async (title, items, cancelLabel) => {
       titles.push(title);
@@ -291,10 +466,23 @@ describe("workflow configurator", () => {
     writeFileSync(paths.projectsFile, JSON.stringify(projects));
     const { context } = fakeContext();
     const ui = scriptedUI({
-      selections: ["demo", "architect", null, null, null, null, "discard"],
+      hotkey: [
+        select("demo"),
+        select("architect"),
+        cancel(),
+        cancel(),
+        cancel(),
+        cancel(),
+      ],
+      selections: [null, "discard"],
       selected: [],
     });
     const titles: string[] = [];
+    const originalHotkey = ui.hotkeySelect;
+    ui.hotkeySelect = async (title, items, cancelLabel) => {
+      titles.push(title);
+      return originalHotkey(title, items, cancelLabel);
+    };
     const originalSelect = ui.select;
     ui.select = async (title, items, cancelLabel) => {
       titles.push(title);
@@ -324,12 +512,12 @@ describe("workflow configurator", () => {
       JSON.stringify({ version: 1, projects: { demo: { roles: {} } } }),
     );
     const { context } = fakeContext();
-    const ui = scriptedUI({ selections: ["demo", null, null] });
+    const ui = scriptedUI({ hotkey: [select("demo"), cancel(), cancel()] });
     const titles: string[] = [];
-    const originalSelect = ui.select;
-    ui.select = async (title, items, cancelLabel) => {
+    const originalHotkey = ui.hotkeySelect;
+    ui.hotkeySelect = async (title, items, cancelLabel) => {
       titles.push(title);
-      return originalSelect(title, items, cancelLabel);
+      return originalHotkey(title, items, cancelLabel);
     };
 
     await configureProjectWorkflows(context, paths, ui);
@@ -348,11 +536,7 @@ describe("workflow configurator", () => {
     const { context } = fakeContext();
 
     await expect(
-      configureProjectWorkflows(
-        context,
-        paths,
-        scriptedUI({ selections: ["demo"] }),
-      ),
+      configureProjectWorkflows(context, paths, scriptedUI({})),
     ).rejects.toMatchObject({ code: "INVALID_PROJECTS_FILE" });
     expect(readFileSync(paths.projectsFile, "utf8")).toBe(invalid);
   });

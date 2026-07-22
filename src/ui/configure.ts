@@ -11,14 +11,14 @@ import {
 import { discoverGlobalRoleFilenames } from "../roles.js";
 import type { Diagnostic, ProjectsFileV1 } from "../types.js";
 import {
+  showHotkeySelection,
+  showNoDefaultConfirm,
   showSelection,
+  showTextInput,
   showWorkflowToggles,
+  type HotkeyResult,
   type WorkflowToggleItem,
 } from "./components.js";
-
-const ADD_PROJECT = "__add-project__";
-const ADD_ROLE = "__add-role__";
-const REMOVE_PROJECT = "__remove-project__";
 
 const EXIT_SAVE = "save";
 const EXIT_DISCARD = "discard";
@@ -29,9 +29,18 @@ export interface WorkflowConfiguratorUI {
     items: SelectItem[],
     cancelLabel?: string,
   ): Promise<string | null>;
-  input(title: string, placeholder?: string): Promise<string | undefined>;
+  hotkeySelect(
+    title: string,
+    items: SelectItem[],
+    cancelLabel?: string,
+  ): Promise<HotkeyResult>;
+  textInput(
+    title: string,
+    initial: string,
+    placeholder?: string,
+  ): Promise<string | null>;
+  noDefaultConfirm(title: string, message: string): Promise<boolean>;
   toggles(title: string, workflows: WorkflowToggleItem[]): Promise<Set<string>>;
-  confirm(title: string, message: string): Promise<boolean>;
   notify(message: string, type?: "info" | "warning" | "error"): void;
 }
 
@@ -41,51 +50,32 @@ export function createWorkflowConfiguratorUI(
   return {
     select: (title, items, cancelLabel) =>
       showSelection(ctx, title, items, cancelLabel),
-    input: (title, placeholder) => ctx.ui.input(title, placeholder),
+    hotkeySelect: (title, items, cancelLabel) =>
+      showHotkeySelection(ctx, title, items, cancelLabel),
+    textInput: (title, initial, placeholder) =>
+      showTextInput(ctx, title, initial, placeholder),
+    noDefaultConfirm: (title, message) =>
+      showNoDefaultConfirm(ctx, title, message),
     toggles: (title, workflows) => showWorkflowToggles(ctx, title, workflows),
-    confirm: (title, message) => ctx.ui.confirm(title, message),
     notify: (message, type) => ctx.ui.notify(message, type),
   };
 }
 
-async function chooseProject(
+async function createProject(
   ui: WorkflowConfiguratorUI,
   ctx: ExtensionCommandContext,
   config: ProjectsFileV1,
-): Promise<string | null> {
-  const projectIds = Object.keys(config.projects).sort();
-  const selection = await ui.select(
-    "Select project",
-    [
-      ...projectIds.map((id) => ({ value: id, label: id })),
-      {
-        value: ADD_PROJECT,
-        label: "Add project…",
-        description: "Create a project workflow list without storing a path",
-      },
-      ...(projectIds.length > 0
-        ? [
-            {
-              value: REMOVE_PROJECT,
-              label: "Remove project…",
-              description: "Delete a project and all its workflow assignments",
-            },
-          ]
-        : []),
-    ],
-    "exit",
-  );
-  if (selection === null || selection !== ADD_PROJECT) return selection;
-
+): Promise<void> {
   const suggestion = suggestId(
     ctx.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "",
   );
   while (true) {
-    const entered = await ui.input(
-      "New project ID",
+    const entered = await ui.textInput(
+      "Create project",
+      "",
       suggestion || "project-id",
     );
-    if (entered === undefined) return null;
+    if (entered === null) return;
     if (!isValidId(entered)) {
       ui.notify("Project ID must be lowercase kebab-case.", "error");
       continue;
@@ -94,86 +84,185 @@ async function chooseProject(
       ui.notify(`Project ${entered} already exists.`, "error");
       continue;
     }
-    return entered;
+    config.projects[entered] = { roles: {} };
+    ui.notify(`Created project ${entered}.`, "info");
+    return;
   }
+}
+
+async function renameProject(
+  ui: WorkflowConfiguratorUI,
+  config: ProjectsFileV1,
+  oldId: string,
+): Promise<void> {
+  while (true) {
+    const entered = await ui.textInput(
+      "Rename project",
+      oldId,
+      "new project id",
+    );
+    if (entered === null || entered === oldId) return;
+    if (!isValidId(entered)) {
+      ui.notify("Project ID must be lowercase kebab-case.", "error");
+      continue;
+    }
+    if (config.projects[entered]) {
+      ui.notify(`Project ${entered} already exists.`, "error");
+      continue;
+    }
+    config.projects[entered] = config.projects[oldId];
+    delete config.projects[oldId];
+    ui.notify(`Renamed project ${oldId} → ${entered}.`, "info");
+    return;
+  }
+}
+
+async function deleteProject(
+  ui: WorkflowConfiguratorUI,
+  config: ProjectsFileV1,
+  id: string,
+): Promise<void> {
+  const confirmed = await ui.noDefaultConfirm(
+    "Delete project",
+    `Delete project ${id} and all its workflow assignments?`,
+  );
+  if (!confirmed) return;
+  delete config.projects[id];
+  ui.notify(`Deleted project ${id}.`, "info");
+}
+
+async function chooseProject(
+  ui: WorkflowConfiguratorUI,
+  ctx: ExtensionCommandContext,
+  config: ProjectsFileV1,
+): Promise<string | null> {
+  while (true) {
+    const projectIds = Object.keys(config.projects).sort();
+    const items: SelectItem[] = projectIds.map((id) => ({
+      value: id,
+      label: id,
+    }));
+    const result = await ui.hotkeySelect("Select project", items, "exit");
+    if (result.kind === "cancel") return null;
+    if (result.kind === "select") return result.value;
+    if (result.kind === "create") {
+      await createProject(ui, ctx, config);
+      continue;
+    }
+    if (result.kind === "rename") {
+      await renameProject(ui, config, result.value);
+      continue;
+    }
+    if (result.kind === "delete") {
+      await deleteProject(ui, config, result.value);
+      continue;
+    }
+  }
+}
+
+async function createRole(
+  ui: WorkflowConfiguratorUI,
+  projectId: string,
+  config: ProjectsFileV1,
+  configuredRoleIds: Set<string>,
+): Promise<void> {
+  while (true) {
+    const entered = await ui.textInput("Create role", "", "role-id");
+    if (entered === null) return;
+    if (!isValidId(entered)) {
+      ui.notify("Role ID must be lowercase kebab-case.", "error");
+      continue;
+    }
+    if (configuredRoleIds.has(entered)) {
+      ui.notify(`Role ${entered} already exists.`, "error");
+      continue;
+    }
+    config.projects[projectId].roles[entered] = [];
+    ui.notify(`Created role ${entered}.`, "info");
+    return;
+  }
+}
+
+async function renameRole(
+  ui: WorkflowConfiguratorUI,
+  projectId: string,
+  config: ProjectsFileV1,
+  oldId: string,
+  configuredRoleIds: Set<string>,
+): Promise<void> {
+  while (true) {
+    const entered = await ui.textInput("Rename role", oldId, "new role id");
+    if (entered === null || entered === oldId) return;
+    if (!isValidId(entered)) {
+      ui.notify("Role ID must be lowercase kebab-case.", "error");
+      continue;
+    }
+    if (configuredRoleIds.has(entered)) {
+      ui.notify(`Role ${entered} already exists.`, "error");
+      continue;
+    }
+    const workflows = config.projects[projectId].roles[oldId];
+    config.projects[projectId].roles[entered] = workflows;
+    delete config.projects[projectId].roles[oldId];
+    ui.notify(`Renamed role ${oldId} → ${entered}.`, "info");
+    return;
+  }
+}
+
+async function deleteRole(
+  ui: WorkflowConfiguratorUI,
+  projectId: string,
+  config: ProjectsFileV1,
+  id: string,
+): Promise<void> {
+  const confirmed = await ui.noDefaultConfirm(
+    "Delete role",
+    `Delete role ${id} and its workflow assignments?`,
+  );
+  if (!confirmed) return;
+  delete config.projects[projectId].roles[id];
+  ui.notify(`Deleted role ${id}.`, "info");
 }
 
 async function chooseRole(
   ui: WorkflowConfiguratorUI,
   projectId: string,
-  configuredRoleIds: string[],
-  globalRoleIds: string[],
+  config: ProjectsFileV1,
+  globalRoleIds: Set<string>,
 ): Promise<string | null> {
-  const available = new Set(globalRoleIds);
-  const items = new Map<string, SelectItem>();
-  for (const roleId of configuredRoleIds) {
-    items.set(roleId, {
-      value: roleId,
-      label: `${roleId}${available.has(roleId) ? "" : " [unavailable]"}`,
-      description: available.has(roleId)
+  while (true) {
+    const available = globalRoleIds;
+    const configuredRoleIds = Object.keys(
+      config.projects[projectId].roles,
+    ).sort();
+    const items: SelectItem[] = configuredRoleIds.map((id) => ({
+      value: id,
+      label: available.has(id) ? id : `${id} [unavailable]`,
+      description: available.has(id)
         ? "Configured role"
         : "Configured role filename is absent globally; this does not block configuration",
-    });
-  }
-  for (const roleId of globalRoleIds) {
-    if (!items.has(roleId)) {
-      items.set(roleId, {
-        value: roleId,
-        label: roleId,
-        description: "Globally present role filename (not yet configured)",
-      });
-    }
-  }
-
-  const selection = await ui.select(
-    `Select role for ${projectId}`,
-    [
-      ...[...items.values()].sort((left, right) =>
-        left.value.localeCompare(right.value),
-      ),
-      {
-        value: ADD_ROLE,
-        label: "Add role ID…",
-        description: "Enter a role ID.",
-      },
-    ],
-    "back",
-  );
-  if (selection === null || selection !== ADD_ROLE) return selection;
-
-  while (true) {
-    const entered = await ui.input("Role ID", "role-id");
-    if (entered === undefined) return null;
-    if (!isValidId(entered)) {
-      ui.notify("Role ID must be lowercase kebab-case.", "error");
+    }));
+    const configuredSet = new Set(configuredRoleIds);
+    const result = await ui.hotkeySelect(
+      `Select role for ${projectId}`,
+      items,
+      "back",
+    );
+    if (result.kind === "cancel") return null;
+    if (result.kind === "select") return result.value;
+    if (result.kind === "create") {
+      await createRole(ui, projectId, config, configuredSet);
       continue;
     }
-    return entered;
+    if (result.kind === "rename") {
+      await renameRole(ui, projectId, config, result.value, configuredSet);
+      continue;
+    }
+    if (result.kind === "delete") {
+      await deleteRole(ui, projectId, config, result.value);
+      continue;
+    }
   }
-}
-
-async function removeProject(
-  ui: WorkflowConfiguratorUI,
-  config: ProjectsFileV1,
-): Promise<void> {
-  const projectIds = Object.keys(config.projects).sort();
-  if (projectIds.length === 0) {
-    ui.notify("No projects to remove.", "info");
-    return;
-  }
-  const selection = await ui.select(
-    "Remove project",
-    projectIds.map((id) => ({ value: id, label: id })),
-    "back",
-  );
-  if (selection === null) return;
-  const confirmed = await ui.confirm(
-    "Remove project",
-    `Remove project ${selection} and all its workflow assignments?`,
-  );
-  if (!confirmed) return;
-  delete config.projects[selection];
-  ui.notify(`Removed project ${selection}.`, "info");
 }
 
 function cloneProjectsFile(config: ProjectsFileV1): ProjectsFileV1 {
@@ -305,14 +394,11 @@ export async function configureProjectWorkflows(
   for (const issue of roleDiscovery.diagnostics) {
     ui.notify(`${issue.code}: ${issue.message}`, "warning");
   }
+  const globalRoleIds = new Set(roleDiscovery.roleIds);
 
   const staged = cloneProjectsFile(loaded.value);
   while (true) {
     const projectId = await chooseProject(ui, ctx, staged);
-    if (projectId === REMOVE_PROJECT) {
-      await removeProject(ui, staged);
-      continue;
-    }
     if (projectId === null) {
       if (!hasChanges(loaded.value, staged)) return;
       const decision = await confirmExitWithStagedChanges(
@@ -330,12 +416,7 @@ export async function configureProjectWorkflows(
     if (!staged.projects[projectId]) staged.projects[projectId] = { roles: {} };
 
     while (true) {
-      const roleId = await chooseRole(
-        ui,
-        projectId,
-        Object.keys(staged.projects[projectId].roles),
-        roleDiscovery.roleIds,
-      );
+      const roleId = await chooseRole(ui, projectId, staged, globalRoleIds);
       if (roleId === null) break;
 
       const before = [
