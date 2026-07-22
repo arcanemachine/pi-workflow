@@ -1,62 +1,21 @@
-# Active follow-up work
+# Follow-up work
 
-These user-requested improvements are active scope. Implement them immediately after the current Task 3 migration is accepted and committed, before Task 4 documentation and release-readiness work.
+Work requested beyond the original V1 plan. Completed items are retained as a record; upcoming items are the active backlog.
 
-## Expanded workflow-list spacing
+## Completed
 
-Add one blank line between workflow entries in expanded `pi_workflow` project and global catalog results. Preserve compact role-assignment output and existing result-size bounds.
+The following user-requested improvements were implemented and committed as part of Task 3:
 
-## Collapsible tool presentation
+- **Expanded workflow-list spacing** — one blank line between workflow entries in expanded `pi_workflow` project and global catalog results, preserving the bounded result size.
+- **Collapsible tool presentation** — plain one-line collapsed action summary with an expand hint; expanded shows the full result. No emoji. Model-visible content unchanged.
+- **Active-role workflow candidates (prompt guidance)** — agents identify their role from their own instructions and recommend only their assigned workflows; other managing roles are coordination context. Behavioral contract, not runtime enforcement.
+- **Configuration navigation and exit saving** — removed `Review and save…`; hierarchical Escape navigation; top-level Escape with staged changes opens a save-before-exit confirmation (Yes, save and exit / No, discard and exit); Escape returns to the project menu. Simplified `Add role ID…` wording.
 
-Add plain, concise collapsed rendering for `pi_workflow` tool calls and results using Pi's supported expanded/collapsed tool presentation APIs.
+## Upcoming
 
-Examples:
+### Ctrl+S save-and-exit confirmation
 
-- `Listing workflows for practorium`
-- `Listing global workflows`
-- `Reading bounded-work metadata`
-- `Reading bounded-work`
-
-Expanded presentation should retain the complete current tool result. Collapsed presentation should show only the short action summary. Use no emoji or decorative status text. This is a TUI presentation change only; it must not reduce or alter the model-visible tool result.
-
-## Active-role workflow candidates
-
-Clarify the existing `pi_workflow` prompt guidance without coupling to `pi-role`:
-
-- an agent uses its active role instructions to identify its own role;
-- it recommends only workflows assigned to that role in the project workflow list;
-- workflows assigned to other roles remain visible as coordination context, not candidates for the active role;
-- this remains a behavioral prompt contract, not runtime role enforcement.
-
-## Configuration navigation and exit saving
-
-Remove `Review and save…` from both the project and role menus.
-
-Preserve hierarchical Escape navigation:
-
-- workflow settings `Esc` stages the current toggles and returns to the role menu;
-- role menu `Esc` returns to the project menu;
-- project menu `Esc` exits immediately when there are no staged changes;
-- project menu `Esc` with staged changes opens a save-before-exit confirmation instead of exiting or discarding.
-
-The save-before-exit confirmation must:
-
-- ask whether to save the staged changes before exiting;
-- default to **Yes, save and exit**;
-- require Enter to select Yes or No, so Escape alone cannot discard changes;
-- save atomically and exit when Yes is selected;
-- discard staged changes and exit when No is selected;
-- return to the top-level project menu without saving or discarding when Escape cancels the confirmation.
-
-Simplify role-entry wording:
-
-- menu label: `Add role ID…`;
-- help text: `Enter a role ID.`;
-- avoid language about claiming whether a role exists, is valid, or is active.
-
-## Ctrl+S save-and-exit (plan pending, not for immediate implementation)
-
-Capture only — to be finalized as a plan at the end of the session, after Task 3 closeout and Task 4 work. Do not implement until the user approves the finalized plan.
+Capture only — finalized as a plan, not yet implemented. Do not implement until the user approves.
 
 Behavior:
 
@@ -70,13 +29,13 @@ Behavior:
 - Press Up to reach **Yes**, then Enter → save staged changes atomically and exit the configurator.
 - Safe-default design: the easy path (Esc, or Enter on the default No) preserves state without saving; saving-and-exiting requires deliberately moving Up to Yes.
 
-Open questions to resolve in the finalized plan:
+Open questions to resolve before implementation:
 
 - Whether saved state for the Yes path is identical to the existing Esc confirmation save.
 - Whether Ctrl+S is available from every menu level (project, role, workflow toggles) or only the top-level project menu.
 - Keybinding registration mechanism in pi for command-scoped shortcuts.
 
-## Remove the managing_roles metadata field (upcoming)
+### Remove the managing_roles metadata field
 
 `managing_roles` is not a preserved Practorium concept: the original `workflows.schema.json` required `title`, `detail`, `use_when`, `avoid_when`, `routing`, `active_state`, `process_feedback`, and `artifacts`, but never `managing_roles`. The field was introduced during the global Markdown migration as display-only metadata with no enforcement and no functional lineage.
 
