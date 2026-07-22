@@ -45,6 +45,16 @@ describe("parseWorkflowContent", () => {
     expect(() => parseWorkflowContent(source)).toThrow(expected);
   });
 
+  it("does not validate or require a managing_roles field", () => {
+    const parsed = parseWorkflowContent(validWorkflow());
+    expect(parsed.metadata).not.toHaveProperty("managing_roles");
+
+    const withLegacyField = parseWorkflowContent(
+      validWorkflow({ extra: "managing_roles:\n  - architect" }),
+    );
+    expect(withLegacyField.metadata.managing_roles).toEqual(["architect"]); // legacy extra field passes through
+  });
+
   it("rejects malformed routing and empty bodies", () => {
     expect(() =>
       parseWorkflowContent(validWorkflow({ extra: "routing: {}" })),

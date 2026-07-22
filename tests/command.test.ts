@@ -148,6 +148,59 @@ describe("workflow configurator", () => {
     });
   });
 
+  it("removes a project and its workflow assignments on save", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: {
+        demo: { roles: { architect: ["bounded-work"] } },
+        keep: { roles: { architect: ["bounded-work"] } },
+      },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        selections: ["__remove-project__", "demo", null, "save"],
+        confirm: true,
+      }),
+    );
+
+    const saved = JSON.parse(readFileSync(paths.projectsFile, "utf8"));
+    expect(saved).toEqual({
+      version: 1,
+      projects: { keep: { roles: { architect: ["bounded-work"] } } },
+    });
+  });
+
+  it("keeps a project when removal is cancelled", async () => {
+    const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
+    const projects: ProjectsFileV1 = {
+      version: 1,
+      projects: { demo: { roles: { architect: ["bounded-work"] } } },
+    };
+    writeFileSync(paths.projectsFile, JSON.stringify(projects));
+    const { context } = fakeContext();
+
+    await configureProjectWorkflows(
+      context,
+      paths,
+      scriptedUI({
+        selections: ["__remove-project__", "demo", null, "discard"],
+        confirm: false,
+      }),
+    );
+
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(
+      JSON.stringify(projects),
+    );
+  });
+
   it("shows unavailable roles and configured missing or invalid workflows as removable", async () => {
     const paths = setup();
     writeFileSync(join(paths.workflowDir, "valid.md"), validWorkflow());

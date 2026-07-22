@@ -18,6 +18,7 @@ import {
 
 const ADD_PROJECT = "__add-project__";
 const ADD_ROLE = "__add-role__";
+const REMOVE_PROJECT = "__remove-project__";
 
 const EXIT_SAVE = "save";
 const EXIT_DISCARD = "discard";
@@ -62,6 +63,15 @@ async function chooseProject(
         label: "Add project…",
         description: "Create a project workflow list without storing a path",
       },
+      ...(projectIds.length > 0
+        ? [
+            {
+              value: REMOVE_PROJECT,
+              label: "Remove project…",
+              description: "Delete a project and all its workflow assignments",
+            },
+          ]
+        : []),
     ],
     "exit",
   );
@@ -132,7 +142,7 @@ async function chooseRole(
   if (selection === null || selection !== ADD_ROLE) return selection;
 
   while (true) {
-    const entered = await ui.input("Managing role ID", "role-id");
+    const entered = await ui.input("Role ID", "role-id");
     if (entered === undefined) return null;
     if (!isValidId(entered)) {
       ui.notify("Role ID must be lowercase kebab-case.", "error");
@@ -140,6 +150,30 @@ async function chooseRole(
     }
     return entered;
   }
+}
+
+async function removeProject(
+  ui: WorkflowConfiguratorUI,
+  config: ProjectsFileV1,
+): Promise<void> {
+  const projectIds = Object.keys(config.projects).sort();
+  if (projectIds.length === 0) {
+    ui.notify("No projects to remove.", "info");
+    return;
+  }
+  const selection = await ui.select(
+    "Remove project",
+    projectIds.map((id) => ({ value: id, label: id })),
+    "back",
+  );
+  if (selection === null) return;
+  const confirmed = await ui.confirm(
+    "Remove project",
+    `Remove project ${selection} and all its workflow assignments?`,
+  );
+  if (!confirmed) return;
+  delete config.projects[selection];
+  ui.notify(`Removed project ${selection}.`, "info");
 }
 
 function cloneProjectsFile(config: ProjectsFileV1): ProjectsFileV1 {
@@ -275,6 +309,10 @@ export async function configureProjectWorkflows(
   const staged = cloneProjectsFile(loaded.value);
   while (true) {
     const projectId = await chooseProject(ui, ctx, staged);
+    if (projectId === REMOVE_PROJECT) {
+      await removeProject(ui, staged);
+      continue;
+    }
     if (projectId === null) {
       if (!hasChanges(loaded.value, staged)) return;
       const decision = await confirmExitWithStagedChanges(
