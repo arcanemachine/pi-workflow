@@ -133,7 +133,7 @@ describe("workflow configurator", () => {
       context,
       paths,
       scriptedUI({
-        selections: ["__add-project__", "__add-role__", null, "save"],
+        selections: ["__add-project__", "__add-role__", null, null, "save"],
         inputs: ["demo", "architect"],
         selected: ["bounded-work"],
       }),
@@ -165,7 +165,7 @@ describe("workflow configurator", () => {
     let roleItems: string[] = [];
 
     const ui = scriptedUI({
-      selections: ["demo", "architect", null, "discard"],
+      selections: ["demo", "architect", null, null, "discard"],
       selected: ["valid"],
       inspectToggles(items) {
         expect(items.map((item) => item.label)).toEqual([
@@ -238,7 +238,7 @@ describe("workflow configurator", () => {
     writeFileSync(paths.projectsFile, JSON.stringify(projects));
     const { context } = fakeContext();
     const ui = scriptedUI({
-      selections: ["demo", "architect", null, null, null, "discard"],
+      selections: ["demo", "architect", null, null, null, null, "discard"],
       selected: [],
     });
     const titles: string[] = [];

@@ -188,7 +188,8 @@ export function discoverWorkflowCatalog(
   const entries = candidates.names
     .filter(
       (filename) =>
-        included === undefined || included.has(workflowIdFromFilename(filename)),
+        included === undefined ||
+        included.has(workflowIdFromFilename(filename)),
     )
     .map((filename) => discoverEntry(directory, filename, collisions))
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -222,8 +223,7 @@ export function requireWorkflow(
     );
   }
   const exactFailure = entry.diagnostics.find(
-    (item) =>
-      item.code === "WORKFLOW_TOO_LARGE" || item.code === "READ_FAILED",
+    (item) => item.code === "WORKFLOW_TOO_LARGE" || item.code === "READ_FAILED",
   );
   if (exactFailure) {
     throw new WorkflowError(exactFailure.code, exactFailure.message);

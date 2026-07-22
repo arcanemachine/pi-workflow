@@ -122,10 +122,7 @@ function errorResult(
   code: WorkflowErrorCode,
   message: string,
 ): WorkflowToolResult {
-  const text = truncateUtf8(
-    `${code}: ${message}`,
-    MAX_RENDERED_RESULT_BYTES,
-  );
+  const text = truncateUtf8(`${code}: ${message}`, MAX_RENDERED_RESULT_BYTES);
   return {
     content: [{ type: "text", text }],
     details: { action, ok: false, code },
@@ -157,7 +154,10 @@ function requireArgument(
       `${name} is required for this action.`,
     );
   }
-  return requireValidId(value, name === "project" ? "Project ID" : "Workflow ID");
+  return requireValidId(
+    value,
+    name === "project" ? "Project ID" : "Workflow ID",
+  );
 }
 
 function configuredProject(
@@ -176,10 +176,7 @@ function configuredProject(
   return project;
 }
 
-function metadataLines(
-  workflow: WorkflowDefinition,
-  indent: string,
-): string[] {
+function metadataLines(workflow: WorkflowDefinition, indent: string): string[] {
   const { metadata } = workflow;
   return [
     `${indent}${workflow.id}: ${metadata.title}`,
@@ -252,7 +249,9 @@ function listProject(
     }
   }
 
-  lines.push(...diagnosticLines([...catalog.diagnostics, ...roles.diagnostics]));
+  lines.push(
+    ...diagnosticLines([...catalog.diagnostics, ...roles.diagnostics]),
+  );
   return ensureBounded("list", lines.join("\n"), "CATALOG_TOO_LARGE");
 }
 
@@ -294,7 +293,9 @@ function projectAssignment(
   const visible: string[] = [];
   let visibleBytes = 0;
   for (const roleId of roles) {
-    const addedBytes = Buffer.byteLength(`${visible.length === 0 ? "" : ", "}${roleId}`);
+    const addedBytes = Buffer.byteLength(
+      `${visible.length === 0 ? "" : ", "}${roleId}`,
+    );
     if (visibleBytes + addedBytes > 1_200) break;
     visible.push(roleId);
     visibleBytes += addedBytes;
@@ -395,8 +396,7 @@ export function createWorkflowTool(
         return new Text("", 0, 0);
       }
       const content = result.content[0];
-      const body =
-        content && content.type === "text" ? content.text : "";
+      const body = content && content.type === "text" ? content.text : "";
       return new Text(`\n${theme.fg("toolOutput", body)}`, 0, 0);
     },
   };
