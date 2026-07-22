@@ -7,7 +7,7 @@ import { productionWorkflowPaths, type WorkflowPaths } from "./paths.js";
 import { configureProjectWorkflows } from "./ui/configure.js";
 
 export const WORKFLOW_COMMAND_DESCRIPTION =
-  "Configure which workflows are available to each workflow-managing role in a project.";
+  "Configure which workflows are available to each role in a project.";
 
 export type WorkflowCommandHandler = (
   args: string,

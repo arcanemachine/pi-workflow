@@ -50,7 +50,7 @@ export const WORKFLOW_PROMPT_GUIDELINES = [
   "Treat pi_workflow unavailable-role and missing-workflow markers as diagnostics, not permission to rewrite configuration.",
   "If pi_workflow returns CATALOG_TOO_LARGE, stop selection, explain that bulk comparison is impossible, and ask the user to reduce the project workflow list with /workflows; do not inspect workflows one by one.",
   "Determine your active role from your own role instructions, not from pi_workflow; then recommend only workflows assigned to that role in the pi_workflow project list.",
-  "Workflows assigned to other managing roles in the pi_workflow project list are coordination context, not candidates for your active role; describe them only when the user asks about them.",
+  "Workflows assigned to other roles in the pi_workflow project list are coordination context, not candidates for your active role; describe them only when the user asks about them.",
   "This role-based selection is a behavioral contract enforced by guidance, not by pi_workflow; the tool does not query or depend on any role extension.",
 ] as const;
 
@@ -181,7 +181,6 @@ function metadataLines(workflow: WorkflowDefinition, indent: string): string[] {
   return [
     `${indent}${workflow.id}: ${metadata.title}`,
     `${indent}  summary: ${metadata.summary}`,
-    `${indent}  workflow-managing roles: ${metadata.managing_roles.join(", ")}`,
     `${indent}  use when: ${metadata.use_when.join(" | ")}`,
     `${indent}  avoid when: ${metadata.avoid_when.join(" | ")}`,
     `${indent}  routes: ${metadata.routing ? Object.keys(metadata.routing).sort().join(", ") : "(none)"}`,
@@ -240,7 +239,7 @@ function listProject(
       }
     }
 
-    lines.push("", "Project availability by managing role:");
+    lines.push("", "Workflows assigned by role:");
     for (const roleId of roleIds) {
       const assignments = [...project.roles[roleId]].sort();
       lines.push(

@@ -177,7 +177,7 @@ describe("workflow configurator", () => {
     });
     const originalSelect = ui.select;
     ui.select = async (title, items) => {
-      if (title.includes("managing role"))
+      if (title.startsWith("Select role for"))
         roleItems = items.map((item) => item.label);
       return originalSelect(title, items);
     };
@@ -216,8 +216,8 @@ describe("workflow configurator", () => {
 
     expect(titles).toEqual([
       "Select project",
-      "Select managing role for demo",
-      "Select managing role for demo",
+      "Select role for demo",
+      "Select role for demo",
       "Select project",
       "Save staged workflow-list changes before exiting?",
     ]);
@@ -252,8 +252,8 @@ describe("workflow configurator", () => {
 
     expect(titles).toEqual([
       "Select project",
-      "Select managing role for demo",
-      "Select managing role for demo",
+      "Select role for demo",
+      "Select role for demo",
       "Select project",
       "Save staged workflow-list changes before exiting?",
       "Select project",
@@ -283,7 +283,7 @@ describe("workflow configurator", () => {
 
     expect(titles).toEqual([
       "Select project",
-      "Select managing role for demo",
+      "Select role for demo",
       "Select project",
     ]);
   });

@@ -101,7 +101,7 @@ async function chooseRole(
       value: roleId,
       label: `${roleId}${available.has(roleId) ? "" : " [unavailable]"}`,
       description: available.has(roleId)
-        ? "Configured managing role"
+        ? "Configured role"
         : "Configured role filename is absent globally; this does not block configuration",
     });
   }
@@ -116,7 +116,7 @@ async function chooseRole(
   }
 
   const selection = await ui.select(
-    `Select managing role for ${projectId}`,
+    `Select role for ${projectId}`,
     [
       ...[...items.values()].sort((left, right) =>
         left.value.localeCompare(right.value),

@@ -37,25 +37,6 @@ function nonEmptyStringArray(
   return result.length === value.length ? result : undefined;
 }
 
-function validIdArray(
-  value: unknown,
-  field: string,
-  issues: string[],
-): string[] | undefined {
-  const result = nonEmptyStringArray(value, field, issues);
-  if (!result) return undefined;
-
-  for (const entry of result) {
-    if (!isValidId(entry)) {
-      issues.push(`${field} contains invalid ID ${JSON.stringify(entry)}`);
-    }
-  }
-  if (new Set(result).size !== result.length) {
-    issues.push(`${field} must not contain duplicates`);
-  }
-  return result;
-}
-
 function parseRouting(
   value: unknown,
   issues: string[],
@@ -152,11 +133,6 @@ export function parseWorkflowContent(raw: string): ParsedWorkflowContent {
 
   const title = nonEmptyString(frontmatter.title, "title", issues);
   const summary = nonEmptyString(frontmatter.summary, "summary", issues);
-  const managingRoles = validIdArray(
-    frontmatter.managing_roles,
-    "managing_roles",
-    issues,
-  );
   const useWhen = nonEmptyStringArray(frontmatter.use_when, "use_when", issues);
   const avoidWhen = nonEmptyStringArray(
     frontmatter.avoid_when,
@@ -179,7 +155,6 @@ export function parseWorkflowContent(raw: string): ParsedWorkflowContent {
       ...frontmatter,
       title: title!,
       summary: summary!,
-      managing_roles: managingRoles!,
       use_when: useWhen!,
       avoid_when: avoidWhen!,
       ...(routing === undefined ? {} : { routing }),

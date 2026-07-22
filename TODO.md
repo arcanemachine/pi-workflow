@@ -8,8 +8,9 @@ The following user-requested improvements were implemented and committed as part
 
 - **Expanded workflow-list spacing** — one blank line between workflow entries in expanded `pi_workflow` project and global catalog results, preserving the bounded result size.
 - **Collapsible tool presentation** — plain one-line collapsed action summary with an expand hint; expanded shows the full result. No emoji. Model-visible content unchanged.
-- **Active-role workflow candidates (prompt guidance)** — agents identify their role from their own instructions and recommend only their assigned workflows; other managing roles are coordination context. Behavioral contract, not runtime enforcement.
+- **Active-role workflow candidates (prompt guidance)** — agents identify their role from their own instructions and recommend only their assigned workflows; other roles are coordination context. Behavioral contract, not runtime enforcement.
 - **Configuration navigation and exit saving** — removed `Review and save…`; hierarchical Escape navigation; top-level Escape with staged changes opens a save-before-exit confirmation (Yes, save and exit / No, discard and exit); Escape returns to the project menu. Simplified `Add role ID…` wording.
+- **Removed the `managing_roles` frontmatter field** — the display-only `managing_roles` workflow frontmatter field had no enforcement or functional lineage, so it was removed in full: dropped from the schema/validator/tests, removed from all four global workflow files, the per-workflow listing line was dropped, `Project availability by managing role:` was relabeled to `Workflows assigned by role:`, and the `managing role` wording in the `/workflows` command description, role-selection prompts, and prompt guidelines was neutralized to `role`.
 
 ## Upcoming
 
@@ -34,21 +35,3 @@ Resolved design decisions (approved):
 - Yes-path save is identical to the existing Esc confirmation save; reuse that atomic save routine so Ctrl+S only routes to it (no separate save path).
 - Ctrl+S is available from every menu level (project, role, workflow toggles), consistent with Escape's one-level-up navigation.
 - Keybinding mechanism: in-scope interception of the raw Ctrl+S byte (`\x13`) inside each `ctx.ui.custom` `handleInput`, before delegating to the list. This stays within pi-workflow V1's thin scope; do NOT add a command-scoped `AppKeybinding` to pi-coding-agent core (out of V1 scope).
-
-### Remove the managing_roles metadata field
-
-`managing_roles` is not a preserved Practorium concept: the original `workflows.schema.json` required `title`, `detail`, `use_when`, `avoid_when`, `routing`, `active_state`, `process_feedback`, and `artifacts`, but never `managing_roles`. The field was introduced during the global Markdown migration as display-only metadata with no enforcement and no functional lineage.
-
-Remove it entirely so the model is just workflows + projects + per-role assignment lists driven by `/workflows`:
-
-- Drop `managing_roles` from the workflow frontmatter schema in `src/metadata.ts` and its validator/tests.
-- Remove the `managing_roles:` block from all four global workflow files under `/workspace/.pi/agent/workflows/` (including the inconsistent Sergeant entries in `bounded-work.md`, `bounded-series.md`, `full-phase.md`).
-- Stop printing the `workflow-managing roles:` line in `src/tool.ts` listing output.
-- Make `Project availability by managing role:` in the listing the sole per-role source, relabeled to a neutral name (for example `Workflows assigned by role:`) since nothing is "managed" anymore.
-- Update tool and metadata tests accordingly.
-
-Resolved design decision (approved):
-
-- Full removal as specified below, relabeling the listing's per-role line to a neutral name (for example `Workflows assigned by role:`). Do not keep the field as a tolerated-but-unvalidated extra.
-
-This supersedes the earlier Sergeant frontmatter edit; leave the existing frontmatter in place until this item removes the field wholesale.

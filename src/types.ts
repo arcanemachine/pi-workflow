@@ -8,7 +8,6 @@ export interface WorkflowRouteV1 {
 export interface WorkflowMetadataV1 {
   title: string;
   summary: string;
-  managing_roles: string[];
   use_when: string[];
   avoid_when: string[];
   routing?: Record<string, WorkflowRouteV1>;

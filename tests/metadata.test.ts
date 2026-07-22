@@ -21,7 +21,6 @@ describe("parseWorkflowContent", () => {
 
     expect(parsed.metadata).toMatchObject({
       title: "Bounded work",
-      managing_roles: ["architect"],
       future_field: { nested: true },
       routing: {
         direct: {
@@ -36,20 +35,12 @@ describe("parseWorkflowContent", () => {
   it.each([
     ["frontmatter ID", "id: redundant", /frontmatter id is not allowed/],
     ["empty title", 'title: ""', /title must be a non-empty string/],
-    [
-      "duplicate role",
-      "  - architect\n  - architect",
-      /must not contain duplicates/,
-    ],
-    ["invalid role", "  - Architect", /invalid ID/],
   ])("rejects %s", (_name, replacement, expected) => {
     let source = validWorkflow();
     if (_name === "frontmatter ID") {
       source = source.replace("summary:", `${replacement}\nsummary:`);
-    } else if (_name === "empty title") {
-      source = source.replace('title: "Bounded work"', replacement as string);
     } else {
-      source = source.replace("  - architect", replacement as string);
+      source = source.replace('title: "Bounded work"', replacement as string);
     }
     expect(() => parseWorkflowContent(source)).toThrow(expected);
   });

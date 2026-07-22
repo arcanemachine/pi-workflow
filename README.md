@@ -2,7 +2,7 @@
 
 A thin workflow-catalog extension for [Pi](https://pi.dev).
 
-`pi-workflow` lets users maintain a central project workflow list grouped by managing role, while keeping complete workflow guidance in global Markdown files. Agents list project metadata in bulk, recommend an appropriate workflow from that metadata, obtain explicit user approval, and then read only the selected workflow.
+`pi-workflow` lets users maintain a central project workflow list grouped by role, while keeping complete workflow guidance in global Markdown files. Agents list project metadata in bulk, recommend an appropriate workflow from that metadata, obtain explicit user approval, and then read only the selected workflow.
 
 V1 is implemented; release-readiness checks are in progress. The deterministic catalog, read-only `pi_workflow` tool, and `/workflows` configuration command are implemented. [`PLAN.md`](./PLAN.md) holds the V1 plan and progress checkpoint.
 
@@ -39,8 +39,6 @@ Workflow frontmatter carries bulk selection metadata:
 ---
 title: Bounded work
 summary: Execute one substantive, well-bounded task without full phase ceremony.
-managing_roles:
-  - architect
 use_when:
   - One Worker can complete the substantive task.
 avoid_when:
@@ -55,13 +53,13 @@ routing:
 ---
 ```
 
-Required fields: `title`, `summary`, `managing_roles` (non-empty array of lowercase-kebab role IDs), `use_when` (non-empty array), `avoid_when` (non-empty array). Optional: `routing`, a map of lowercase-kebab route IDs to `participants` (a non-empty role map) and an optional `use_when` array. The Markdown body must be non-empty and holds the complete workflow guidance.
+Required fields: `title`, `summary`, `use_when` (non-empty array), `avoid_when` (non-empty array). Optional: `routing`, a map of lowercase-kebab route IDs to `participants` (a non-empty role map) and an optional `use_when` array. The Markdown body must be non-empty and holds the complete workflow guidance.
 
 The package ships no workflow definitions. Workflows are project-specific content stored outside the package.
 
 ### `projects.json`
 
-`projects.json` maps exact lowercase-kebab project IDs to workflow-managing roles and workflow IDs. It stores no project paths and no active workflow state.
+`projects.json` maps exact lowercase-kebab project IDs to roles and workflow IDs. It stores no project paths and no active workflow state.
 
 ```json
 {
@@ -81,7 +79,7 @@ The package ships no workflow definitions. Workflows are project-specific conten
 }
 ```
 
-Only a project's workflow-managing roles get entries. A role that coordinates or reviews inside an Architect-selected workflow but does not select workflows has no project workflow-list entry. Only the user-operated `/workflows` command writes this file — never the agent tool, and never general file-mutation tools.
+Only a project's roles get entries. A role that coordinates or reviews inside an Architect-selected workflow but does not select workflows has no project workflow-list entry. Only the user-operated `/workflows` command writes this file — never the agent tool, and never general file-mutation tools.
 
 `/workflows` writes `projects.json` atomically: it reads the file when the command opens, stages changes in memory, and on save re-reads the file; if the on-disk content changed (`CONFIG_CHANGED`), it aborts rather than overwrite. The write goes to a unique temporary file with mode `0600`, in a directory created with mode `0700`, then renames over the target. Stale `.projects.json.tmp-*` files from crashed processes are ignored and never collide.
 
@@ -89,7 +87,7 @@ Only a project's workflow-managing roles get entries. A role that coordinates or
 
 ### User command: `/workflows`
 
-The command opens a Pi TUI for selecting a project, selecting or entering a managing role, and toggling workflows through a searchable on/off list.
+The command opens a Pi TUI for selecting a project, selecting or entering a role, and toggling workflows through a searchable on/off list.
 
 - `/workflows` takes no arguments in V1. Any non-whitespace arguments show `Usage: /workflows` and return without opening the UI or writing files.
 - Project IDs are lowercase-kebab and stored without paths.
@@ -101,16 +99,16 @@ The command opens a Pi TUI for selecting a project, selecting or entering a mana
 
 One **read-only** tool provides four actions. Results are bounded to 48 KiB; an oversized project listing returns `CATALOG_TOO_LARGE` and an oversized single workflow returns `WORKFLOW_TOO_LARGE`.
 
-| Action          | Required args                   | Returns                                                                                                                                                                                                                      |
-| --------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list`          | `project`                       | All configured workflow metadata for one project, listed per workflow, plus a managing-role availability section that maps each role to its assigned workflows. An empty list is valid and points the agent to `/workflows`. |
-| `list_global`   | —                               | All global workflow metadata (frontmatter only, no bodies). Reserved for explicit user permission to investigate the global catalog.                                                                                         |
-| `read_metadata` | `workflow` (`project` optional) | Complete frontmatter as JSON for one workflow, with a project-assignment line.                                                                                                                                               |
-| `read`          | `workflow` (`project` optional) | The complete Markdown source for one approved workflow, with a project-assignment line.                                                                                                                                      |
+| Action          | Required args                   | Returns                                                                                                                                                                                                                        |
+| --------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list`          | `project`                       | All configured workflow metadata for one project, listed per workflow, plus a `Workflows assigned by role` section that maps each role to its assigned workflows. An empty list is valid and points the agent to `/workflows`. |
+| `list_global`   | —                               | All global workflow metadata (frontmatter only, no bodies). Reserved for explicit user permission to investigate the global catalog.                                                                                           |
+| `read_metadata` | `workflow` (`project` optional) | Complete frontmatter as JSON for one workflow, with a project-assignment line.                                                                                                                                                 |
+| `read`          | `workflow` (`project` optional) | The complete Markdown source for one approved workflow, with a project-assignment line.                                                                                                                                        |
 
 The tool never modifies configuration, edits plans, executes workflows, inspects plans, or tracks lifecycle state. It is one call per logical action: an agent lists project workflows once, recommends from that metadata, asks for approval as a standalone numbered item, and only then reads the chosen workflow.
 
-The prompt guidelines shipped with the tool encode this contract, including: the agent identifies its role from its own instructions and recommends only workflows assigned to that role; workflows assigned to other managing roles are coordination context, not candidates; and this role-based selection is a behavioral contract, not runtime enforcement — the tool does not query or depend on any role extension.
+The prompt guidelines shipped with the tool encode this contract, including: the agent identifies its role from its own instructions and recommends only workflows assigned to that role; workflows assigned to other roles are coordination context, not candidates; and this role-based selection is a behavioral contract, not runtime enforcement — the tool does not query or depend on any role extension.
 
 ### Tool presentation
 

@@ -107,9 +107,8 @@ describe("pi_workflow actions", () => {
 
     expect(output).toContain("Workflows:");
     expect(output.match(/bounded-work: Bounded work/g)).toHaveLength(1);
-    expect(output).toContain("workflow-managing roles: architect");
     expect(output).toContain("missing [missing]");
-    expect(output).toContain("Project availability by managing role:");
+    expect(output).toContain("Workflows assigned by role:");
     expect(output).toContain("- architect: bounded-work, missing");
     expect(output).toContain("- sergeant [unavailable]: bounded-work, invalid");
     expect(output).toContain("invalid [invalid: INVALID_WORKFLOW]");

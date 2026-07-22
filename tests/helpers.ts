@@ -28,8 +28,6 @@ export function validWorkflow(
     "---",
     `title: ${JSON.stringify(overrides.title ?? "Bounded work")}`,
     `summary: ${JSON.stringify(overrides.summary ?? "Do one bounded task.")}`,
-    "managing_roles:",
-    "  - architect",
     "use_when:",
     "  - Scope is bounded.",
     "avoid_when:",
