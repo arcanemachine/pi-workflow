@@ -13,12 +13,8 @@ import {
   findCatalogEntry,
   requireWorkflow,
 } from "./catalog.js";
-import {
-  WorkflowError,
-  errorDetail,
-  type WorkflowErrorCode,
-} from "./errors.js";
-import { requireValidId } from "./ids.js";
+import { WorkflowError, errorDetail } from "./errors.js";
+import { isValidId } from "./ids.js";
 import { productionWorkflowPaths, type WorkflowPaths } from "./paths.js";
 import { loadProjectsFile } from "./projects.js";
 import { discoverGlobalRoleFilenames } from "./roles.js";
@@ -33,10 +29,11 @@ export const WORKFLOW_PROMPT_SNIPPET =
   "List project workflow metadata and read an approved workflow.";
 
 export const WORKFLOW_PROMPT_GUIDELINES = [
-  "Before recommending a workflow, briefly state that you will list the project's workflows, then call pi_workflow with action list once for the exact project.",
+  "Before recommending a project workflow, briefly state that you will list the project's workflows, then call pi_workflow with action list once for the exact project.",
   "Use the project workflow list returned by pi_workflow by default.",
   "Base workflow recommendations on pi_workflow bulk metadata; do not read every workflow.",
   "Do not call pi_workflow read_metadata separately for every project workflow; use it only for a material detail missing from bulk metadata or when the user asks for that metadata.",
+  "A direct user request to inspect, compare, create, add, or use a global workflow explicitly permits pi_workflow action list_global; call it directly without a project probe.",
   "Never call pi_workflow with action list_global unless the user explicitly permitted global-catalog investigation.",
   "If no project workflow fits, explain that and ask permission before calling pi_workflow with action list_global.",
   "Never call pi_workflow read_metadata for an unconfigured global workflow without explicit user permission.",
@@ -55,15 +52,28 @@ export const WORKFLOW_PROMPT_GUIDELINES = [
 ] as const;
 
 export const WorkflowToolParameters = Type.Object({
-  action: StringEnum(["list", "list_global", "read_metadata", "read"] as const),
-  project: Type.Optional(Type.String()),
-  workflow: Type.Optional(Type.String()),
+  action: StringEnum(
+    ["list", "list_global", "read_metadata", "read"] as const,
+    {
+      description:
+        "list lists one configured project; list_global lists the explicitly permitted global catalog with no project; read_metadata reads one workflow's metadata; read reads one approved workflow's complete Markdown.",
+    },
+  ),
+  project: Type.Optional(
+    Type.String({
+      description:
+        "Configured lowercase-kebab project ID from /workflows; not a filesystem path, repository basename, or inferred working directory.",
+    }),
+  ),
+  workflow: Type.Optional(
+    Type.String({
+      description: "Lowercase-kebab filename stem of a workflow Markdown file.",
+    }),
+  ),
 });
 
 export interface WorkflowToolDetails {
   action: "list" | "list_global" | "read_metadata" | "read";
-  ok: boolean;
-  code?: WorkflowErrorCode;
 }
 
 type WorkflowToolParams = {
@@ -113,35 +123,21 @@ function result(
 ): WorkflowToolResult {
   return {
     content: [{ type: "text", text }],
-    details: { action, ok: true },
-  };
-}
-
-function errorResult(
-  action: WorkflowToolParams["action"],
-  code: WorkflowErrorCode,
-  message: string,
-): WorkflowToolResult {
-  const text = truncateUtf8(`${code}: ${message}`, MAX_RENDERED_RESULT_BYTES);
-  return {
-    content: [{ type: "text", text }],
-    details: { action, ok: false, code },
+    details: { action },
   };
 }
 
 function ensureBounded(
-  action: WorkflowToolParams["action"],
   text: string,
   overflowCode: "CATALOG_TOO_LARGE" | "WORKFLOW_TOO_LARGE",
-): WorkflowToolResult {
+): void {
   if (Buffer.byteLength(text, "utf8") > MAX_RENDERED_RESULT_BYTES) {
     const message =
       overflowCode === "CATALOG_TOO_LARGE"
         ? "The complete workflow metadata result exceeds 48 KiB. Reduce the project workflow list with /workflows; do not inspect workflows one by one."
         : "The complete workflow result exceeds the 48 KiB output limit.";
-    return errorResult(action, overflowCode, message);
+    throw new WorkflowError(overflowCode, message);
   }
-  return result(action, text);
 }
 
 function requireArgument(
@@ -154,10 +150,32 @@ function requireArgument(
       `${name} is required for this action.`,
     );
   }
-  return requireValidId(
-    value,
-    name === "project" ? "Project ID" : "Workflow ID",
-  );
+  return value;
+}
+
+const MAX_CONFIGURED_PROJECTS_BYTES = 1_200;
+const GLOBAL_RECOVERY_HINT =
+  'If the user explicitly requested the global catalog or a global workflow, call action "list_global" with no project.';
+
+function configuredProjectIds(
+  projects: Record<string, ProjectConfigV1>,
+): string {
+  const visible: string[] = [];
+  const ids = Object.keys(projects).sort();
+  let visibleBytes = 0;
+  for (const id of ids) {
+    const displayed = displayId(id);
+    const addedBytes = Buffer.byteLength(
+      `${visible.length === 0 ? "" : ", "}${displayed}`,
+      "utf8",
+    );
+    if (visibleBytes + addedBytes > MAX_CONFIGURED_PROJECTS_BYTES) break;
+    visible.push(displayed);
+    visibleBytes += addedBytes;
+  }
+  if (visible.length === 0) return ids.length === 0 ? "(none)" : "(omitted)";
+  const omitted = ids.length - visible.length;
+  return `${visible.join(", ")}${omitted > 0 ? `, … (${omitted} more)` : ""}`;
 }
 
 function configuredProject(
@@ -165,12 +183,18 @@ function configuredProject(
   projectId: string,
 ): ProjectConfigV1 {
   const projects = loadProjectsFile(paths.projectsFile).value.projects;
+  const available = configuredProjectIds(projects);
+  if (!isValidId(projectId)) {
+    throw new WorkflowError(
+      "INVALID_ID",
+      `Project must be a configured lowercase-kebab ID, not a filesystem path. Configured projects: ${available}. ${GLOBAL_RECOVERY_HINT}`,
+    );
+  }
   const project = projects[projectId];
   if (!project) {
-    const available = Object.keys(projects).sort();
     throw new WorkflowError(
       "PROJECT_NOT_FOUND",
-      `Project ${JSON.stringify(projectId)} is not configured. Configured projects: ${available.length === 0 ? "(none)" : available.join(", ")}.`,
+      `Project ${JSON.stringify(projectId)} is not configured. Configured projects: ${available}. ${GLOBAL_RECOVERY_HINT}`,
     );
   }
   return project;
@@ -199,6 +223,26 @@ function diagnosticLines(diagnostics: readonly Diagnostic[]): string[] {
   ];
 }
 
+function readableCatalog(
+  paths: WorkflowPaths,
+  includeIds?: readonly string[],
+): ReturnType<typeof discoverWorkflowCatalog> {
+  const catalog = discoverWorkflowCatalog(paths.workflowDir, includeIds);
+  if (
+    catalog.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "READ_FAILED" &&
+        diagnostic.path === catalog.directory,
+    )
+  ) {
+    throw new WorkflowError(
+      "READ_FAILED",
+      "Cannot inspect the workflow catalog.",
+    );
+  }
+  return catalog;
+}
+
 function listProject(
   projectId: string,
   paths: WorkflowPaths,
@@ -213,7 +257,7 @@ function listProject(
     }
   }
   const workflowIds = [...workflowRoles.keys()].sort();
-  const catalog = discoverWorkflowCatalog(paths.workflowDir, workflowIds);
+  const catalog = readableCatalog(paths, workflowIds);
   const roles = discoverGlobalRoleFilenames(paths.rolesDir);
   const availableRoles = new Set(roles.roleIds);
   const lines = [`Project workflow list: ${projectId}`];
@@ -251,11 +295,13 @@ function listProject(
   lines.push(
     ...diagnosticLines([...catalog.diagnostics, ...roles.diagnostics]),
   );
-  return ensureBounded("list", lines.join("\n"), "CATALOG_TOO_LARGE");
+  const text = lines.join("\n");
+  ensureBounded(text, "CATALOG_TOO_LARGE");
+  return result("list", text);
 }
 
 function listGlobal(paths: WorkflowPaths): WorkflowToolResult {
-  const catalog = discoverWorkflowCatalog(paths.workflowDir);
+  const catalog = readableCatalog(paths);
   const lines = ["Global workflow catalog:"];
   if (catalog.entries.length === 0) lines.push("(empty)");
   for (let index = 0; index < catalog.entries.length; index++) {
@@ -269,7 +315,9 @@ function listGlobal(paths: WorkflowPaths): WorkflowToolResult {
     }
   }
   lines.push(...diagnosticLines(catalog.diagnostics));
-  return ensureBounded("list_global", lines.join("\n"), "CATALOG_TOO_LARGE");
+  const text = lines.join("\n");
+  ensureBounded(text, "CATALOG_TOO_LARGE");
+  return result("list_global", text);
 }
 
 function projectAssignment(
@@ -280,7 +328,6 @@ function projectAssignment(
   if (projectId === undefined) {
     return "Project assignment: not checked because no project was supplied.";
   }
-  requireValidId(projectId, "Project ID");
   const project = configuredProject(paths, projectId);
   const roles = Object.keys(project.roles)
     .filter((roleId) => project.roles[roleId].includes(workflowId))
@@ -314,11 +361,12 @@ function readMetadata(
 ): WorkflowToolResult {
   const assignment = projectAssignment(paths, projectId, workflowId);
   const workflow = requireWorkflow(
-    discoverWorkflowCatalog(paths.workflowDir, [workflowId]),
+    readableCatalog(paths, [workflowId]),
     workflowId,
   );
   const text = `${assignment}\nSource: ${workflow.path}\nMetadata: ${JSON.stringify(workflow.metadata)}`;
-  return ensureBounded("read_metadata", text, "WORKFLOW_TOO_LARGE");
+  ensureBounded(text, "WORKFLOW_TOO_LARGE");
+  return result("read_metadata", text);
 }
 
 function readWorkflow(
@@ -328,14 +376,12 @@ function readWorkflow(
 ): WorkflowToolResult {
   const assignment = projectAssignment(paths, projectId, workflowId);
   const workflow = requireWorkflow(
-    discoverWorkflowCatalog(paths.workflowDir, [workflowId]),
+    readableCatalog(paths, [workflowId]),
     workflowId,
   );
-  return ensureBounded(
-    "read",
-    `${assignment}\n\n${workflow.raw}`,
-    "WORKFLOW_TOO_LARGE",
-  );
+  const text = `${assignment}\n\n${workflow.raw}`;
+  ensureBounded(text, "WORKFLOW_TOO_LARGE");
+  return result("read", text);
 }
 
 export function executeWorkflowTool(
@@ -362,11 +408,23 @@ export function executeWorkflowTool(
         );
     }
   } catch (error) {
-    if (error instanceof WorkflowError) {
-      return errorResult(params.action, error.code, error.message);
-    }
-    return errorResult(params.action, "READ_FAILED", errorDetail(error));
+    if (error instanceof WorkflowError) throw error;
+    throw new WorkflowError("READ_FAILED", errorDetail(error), {
+      cause: error,
+    });
   }
+}
+
+function toolError(error: WorkflowError): WorkflowError {
+  const prefix = `${error.code}: `;
+  const message = error.message.startsWith(prefix)
+    ? error.message.slice(prefix.length)
+    : error.message;
+  return new WorkflowError(
+    error.code,
+    truncateUtf8(`${prefix}${message}`, MAX_RENDERED_RESULT_BYTES),
+    { cause: error },
+  );
 }
 
 export function createWorkflowTool(
@@ -381,22 +439,35 @@ export function createWorkflowTool(
     promptGuidelines: [...WORKFLOW_PROMPT_GUIDELINES],
     parameters: WorkflowToolParameters,
     async execute(_toolCallId, params) {
-      return executeWorkflowTool(params, pathsProvider());
+      try {
+        return executeWorkflowTool(params, pathsProvider());
+      } catch (error) {
+        if (error instanceof WorkflowError) throw toolError(error);
+        throw toolError(
+          new WorkflowError("READ_FAILED", errorDetail(error), {
+            cause: error,
+          }),
+        );
+      }
     },
     renderCall(args, theme, context) {
-      const summary = `${theme.fg("toolTitle", theme.bold("pi_workflow"))} ${theme.fg("accent", renderSummary(args, false))}`;
+      const summary = `${theme.fg("toolTitle", theme.bold("pi_workflow"))} ${theme.fg(context.isError ? "error" : "accent", renderSummary(args, context.isError))}`;
       const hint = context.expanded
         ? ""
         : theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`);
       return new Text(`${summary}${hint}`, 0, 0);
     },
-    renderResult(result, options, theme, _context) {
-      if (!options.expanded) {
+    renderResult(result, options, theme, context) {
+      if (!options.expanded && !context.isError) {
         return new Text("", 0, 0);
       }
       const content = result.content[0];
       const body = content && content.type === "text" ? content.text : "";
-      return new Text(`\n${theme.fg("toolOutput", body)}`, 0, 0);
+      return new Text(
+        `\n${theme.fg(context.isError ? "error" : "toolOutput", body)}`,
+        0,
+        0,
+      );
     },
   };
 }

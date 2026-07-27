@@ -56,7 +56,8 @@ Keep modules focused. Do not create generic repositories, adapters, service loca
 
 The exact tool and prompt behavior lives in the tool's shipped prompt guidelines and this file's essentials. Preserve these essentials:
 
-- list project workflows in bulk before recommending;
+- list project workflows in bulk before recommending a project workflow;
+- a direct request about a global workflow explicitly permits `list_global` without a project probe; generic workflow requests do not;
 - do not inspect the global catalog without explicit user permission;
 - do not read full workflow Markdown before approval or a direct read request;
 - present workflow approval as the first standalone numbered decision;
