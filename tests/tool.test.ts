@@ -81,34 +81,29 @@ describe("pi_workflow registration", () => {
     expect(registered?.promptGuidelines).toEqual([
       ...WORKFLOW_PROMPT_GUIDELINES,
     ]);
-    expect(registered?.promptGuidelines).toHaveLength(20);
+    expect(registered?.promptGuidelines).toHaveLength(6);
     expect(
-      registered?.promptGuidelines?.every((guideline) =>
-        guideline.includes("pi_workflow"),
-      ),
+      registered?.promptGuidelines?.every((guideline) => guideline.length > 0),
     ).toBe(true);
 
     const schema = JSON.stringify(registered?.parameters);
     expect(schema).toContain("list_global");
-    expect(schema).toContain("configured project");
-    expect(schema).toContain("not a filesystem path");
-    expect(schema).toContain("filename stem");
+    expect(schema).toContain("Project ID configured");
+    expect(schema).not.toContain("filesystem path");
+    expect(schema).toContain("workflow filename stem");
   });
 
   it("encodes every required behavioral guardrail", () => {
     const guidance = WORKFLOW_PROMPT_GUIDELINES.join("\n");
     expect(guidance).toMatch(/project workflow/);
-    expect(guidance).toMatch(/direct user request.*global workflow/i);
+    expect(guidance).toMatch(/global-workflow request/);
     expect(guidance).toMatch(/without a project probe/);
-    expect(guidance).toMatch(/explicitly permitted global-catalog/);
-    expect(guidance).toMatch(/first standalone numbered item/);
-    expect(guidance).toMatch(/already approval/);
-    expect(guidance).toMatch(/Workers/);
-    expect(guidance).toMatch(/only the user-operated \/workflows/);
+    expect(guidance).toMatch(/conversational approval/);
+    expect(guidance).toMatch(/first standalone item exactly/);
+    expect(guidance).toMatch(/role instructions/);
+    expect(guidance).toMatch(/other-role workflows as context/);
+    expect(guidance).toMatch(/only \/workflows may change projects\.json/);
     expect(guidance).toMatch(/CATALOG_TOO_LARGE/);
-    expect(guidance).toMatch(/active role from your own role instructions/);
-    expect(guidance).toMatch(/coordination context, not candidates/);
-    expect(guidance).toMatch(/behavioral contract enforced by guidance/);
   });
 });
 

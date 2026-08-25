@@ -26,29 +26,15 @@ import type {
 } from "./types.js";
 
 export const WORKFLOW_PROMPT_SNIPPET =
-  "List project workflow metadata and read an approved workflow.";
+  "List workflow metadata or read an approved workflow.";
 
 export const WORKFLOW_PROMPT_GUIDELINES = [
-  "Before recommending a project workflow, briefly state that you will list the project's workflows, then call pi_workflow with action list once for the exact project.",
-  "Use the project workflow list returned by pi_workflow by default.",
-  "Base workflow recommendations on pi_workflow bulk metadata; do not read every workflow.",
-  "Do not call pi_workflow read_metadata separately for every project workflow; use it only for a material detail missing from bulk metadata or when the user asks for that metadata.",
-  "A direct user request to inspect, compare, create, add, or use a global workflow explicitly permits pi_workflow action list_global; call it directly without a project probe.",
-  "Never call pi_workflow with action list_global unless the user explicitly permitted global-catalog investigation.",
-  "If no project workflow fits, explain that and ask permission before calling pi_workflow with action list_global.",
-  "Never call pi_workflow read_metadata for an unconfigured global workflow without explicit user permission.",
-  "Never call pi_workflow read until the user explicitly approves that workflow or directly asks to read it.",
-  "After recommending from pi_workflow metadata, make the first standalone numbered item exactly the workflow decision: **1. Workflow approval:** Do you approve using `<workflow-id>`? Do not bury or combine it.",
-  "A direct user instruction to use a named workflow is already approval; do not ask redundantly before calling pi_workflow read.",
-  "Workflow frontmatter in a plan does not replace explicit conversational approval before calling pi_workflow read.",
-  "Only workflow-selection or coordination agents should investigate with pi_workflow; Workers and roles with no configured workflows execute their assignments without selecting a workflow.",
-  "When using pi_workflow, workflow approval authorizes plan edits required by that approved workflow; do not edit a plan outside direct user instruction or approved workflow or task guidance.",
-  "Never add, remove, or edit project workflow assignments with pi_workflow or general file-mutation tools; only the user-operated /workflows command may change projects.json.",
-  "Treat pi_workflow unavailable-role and missing-workflow markers as diagnostics, not permission to rewrite configuration.",
-  "If pi_workflow returns CATALOG_TOO_LARGE, stop selection, explain that bulk comparison is impossible, and ask the user to reduce the project workflow list with /workflows; do not inspect workflows one by one.",
-  "Determine your active role from your own role instructions, not from pi_workflow; then recommend only workflows assigned to that role in the pi_workflow project list.",
-  "Workflows assigned to other roles in the pi_workflow project list are coordination context, not candidates for your active role; describe them only when the user asks about them.",
-  "This role-based selection is a behavioral contract enforced by guidance, not by pi_workflow; the tool does not query or depend on any role extension.",
+  "Before recommending a project workflow, call pi_workflow action list once for that project and use its bulk metadata; use read_metadata only for a missing material detail.",
+  "A direct global-workflow request permits pi_workflow global operations without a project probe; otherwise require explicit permission, asking first if no project workflow fits.",
+  "Read workflow Markdown only after conversational approval or a direct read/use request; plan frontmatter is not approval.",
+  "After recommending, make the first standalone item exactly: **1. Workflow approval:** Do you approve using `<workflow-id>`? Approval permits only required plan edits.",
+  "Only workflow-selection or coordination roles select workflows; derive the active role from role instructions, recommend only its assigned workflows, and treat other-role workflows as context.",
+  "Never modify workflow assignments; only /workflows may change projects.json. Treat unavailable or missing markers diagnostically; on CATALOG_TOO_LARGE ask the user to reduce the project list.",
 ] as const;
 
 export const WorkflowToolParameters = Type.Object({
@@ -56,18 +42,18 @@ export const WorkflowToolParameters = Type.Object({
     ["list", "list_global", "read_metadata", "read"] as const,
     {
       description:
-        "list lists one configured project; list_global lists the explicitly permitted global catalog with no project; read_metadata reads one workflow's metadata; read reads one approved workflow's complete Markdown.",
+        "Operation: list project or permitted global workflows, inspect metadata, or read approved Markdown.",
     },
   ),
   project: Type.Optional(
     Type.String({
       description:
-        "Configured lowercase-kebab project ID from /workflows; not a filesystem path, repository basename, or inferred working directory.",
+        "Project ID configured by /workflows; not a path or repository name.",
     }),
   ),
   workflow: Type.Optional(
     Type.String({
-      description: "Lowercase-kebab filename stem of a workflow Markdown file.",
+      description: "Lowercase-kebab workflow filename stem.",
     }),
   ),
 });
@@ -434,7 +420,7 @@ export function createWorkflowTool(
     name: "pi_workflow",
     label: "Pi Workflow",
     description:
-      "List project or explicitly permitted global workflow metadata, read exact metadata, or read one approved Markdown workflow. This tool is read-only. Results are limited to 48 KiB.",
+      "Read-only workflow metadata and approved Markdown, limited to 48 KiB.",
     promptSnippet: WORKFLOW_PROMPT_SNIPPET,
     promptGuidelines: [...WORKFLOW_PROMPT_GUIDELINES],
     parameters: WorkflowToolParameters,
