@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-09-04
 
 - Add a top-level `/workflows` menu with separate **Edit project workflows** and **Invoke workflow** actions. Invocation lists valid global workflows, warns and omits invalid entries, inserts the selected Markdown source as a visible persisted custom message, and starts an agent turn without changing project configuration.
 - Make semantic and operational workflow-tool failures reject as Pi tool errors, preserving specific error codes and visible collapsed recovery text instead of rendering successful result rows.
