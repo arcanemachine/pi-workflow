@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import {
   showHotkeySelection,
   showNoDefaultConfirm,
+  showSelection,
   showTextInput,
   type HotkeyResult,
 } from "../src/ui/components.js";
@@ -90,6 +91,35 @@ const ITEMS: SelectItem[] = [
   { value: "alpha", label: "Alpha" },
   { value: "beta", label: "Beta" },
 ];
+
+const WORKFLOW_MENU_ITEMS: SelectItem[] = [
+  { value: "edit-project-workflows", label: "Edit project workflows" },
+  { value: "invoke-workflow", label: "Invoke workflow" },
+];
+
+describe("showSelection (real ctx.ui.custom, synthetic keys)", () => {
+  it("selects the new top-level workflow actions and cancels with Escape", async () => {
+    const selectCtx = makeCtx();
+    const selectResult = showSelection(
+      selectCtx.ctx,
+      "Workflows",
+      WORKFLOW_MENU_ITEMS,
+      "exit",
+    );
+    pump(selectCtx, "\r");
+    expect(await selectResult).toBe("edit-project-workflows");
+
+    const cancelCtx = makeCtx();
+    const cancelResult = showSelection(
+      cancelCtx.ctx,
+      "Workflows",
+      WORKFLOW_MENU_ITEMS,
+      "exit",
+    );
+    pump(cancelCtx, "\x1b");
+    expect(await cancelResult).toBeNull();
+  });
+});
 
 describe("showHotkeySelection (real ctx.ui.custom, synthetic keys)", () => {
   it("`n` creates without needing a hovered item", async () => {

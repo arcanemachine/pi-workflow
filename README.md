@@ -4,7 +4,7 @@ A thin workflow-catalog extension for [Pi](https://pi.dev).
 
 `pi-workflow` lets users maintain a central project workflow list grouped by role, while keeping complete workflow guidance in global Markdown files. Agents use project metadata when a relevant configured project is known, use the global catalog for non-project work, recommend an appropriate workflow from bulk metadata, obtain explicit user approval, and then read only the selected workflow.
 
-V1 is implemented and release-ready: a deterministic catalog, namespaced read-only workflow tools, and a `/workflows` configuration command that manages project and role ids and their workflow assignments.
+V1 is implemented and release-ready: a deterministic catalog, namespaced read-only workflow tools, and a `/workflows` command for project workflow configuration and insertion-only workflow invocation.
 
 ## V1 model
 
@@ -87,10 +87,11 @@ Only a project's roles get entries. A role that coordinates or reviews inside an
 
 ### User command: `/workflows`
 
-The command opens a Pi TUI with three layers: a **project** menu, a **role** menu (within a project), and a **workflow toggle list** (within a role). Changing projects or roles stays staged in memory and is written atomically on save.
+The command opens a Pi TUI with a top-level **Workflows** menu. It separates **Edit project workflows**, which contains the existing project, role, and workflow-assignment flow, from **Invoke workflow**, which inserts a selected global workflow into the current conversation and starts an agent turn.
 
 - `/workflows` takes no arguments in V1. Any non-whitespace arguments show `Usage: /workflows` and return without opening the UI or writing files.
-- Project and role IDs are lowercase-kebab and stored without paths.
+- The top-level menu contains exactly **Edit project workflows** and **Invoke workflow**. Escape exits this menu.
+- **Edit project workflows** keeps project and role IDs lowercase-kebab and stored without paths.
 - **Project and role menus** are lists of ids with single-key hotkeys acting on the hovered item:
   - `n` — **create** an id. Opens an in-menu text field seeded empty; Enter commits (validates lowercase-kebab and rejects collisions, looping on error), Esc returns to the list with no change. No confirmation.
   - `r` — **rename** the hovered id. Opens the same text field pre-populated with the current id; Enter commits the rename (validates and collision-checks; an unchanged id is a no-op), Esc returns with no change. Renaming a project carries its roles and workflow assignments over; renaming a role carries its workflow assignments over. No confirmation.
@@ -98,7 +99,9 @@ The command opens a Pi TUI with three layers: a **project** menu, a **role** men
   - Enter (no modifier) on a hovered project or role descends to the next layer. A role with no global role filename under `~/.pi/agent/roles/` is shown once configured, annotated `[unavailable]`; configuring a role is done by creating its id with `n` and then assigning workflows.
 - The **workflow layer** uses a searchable on/off toggle list to pick which already-defined global workflows belong to a role. Workflows are defined by their Markdown files; `/workflows` does not create, edit, or delete workflow files.
 - A missing workflow stays visible (labelled `[missing]`) and is removable; an invalid workflow file stays visible (labelled `[invalid]`, with the validation message as the item description) without blocking configuration of valid ones. The workflow listing tool output separately marks invalid entries as `[invalid: CODE, …]`.
-- Escape navigates one menu level upward. At the top level, Escape with staged changes opens a save-before-exit confirmation (saving is the default); Escape from that confirmation returns to the menu. With no staged changes, Escape exits immediately. Cancellation writes nothing.
+- Escape navigates one menu level upward inside **Edit project workflows**. At that submenu's project level, Escape with staged changes opens a save-before-exit confirmation (saving is the default); Escape from that confirmation returns to the menu. With no staged changes, Escape exits immediately. Cancellation writes nothing.
+- **Invoke workflow** lists every valid, readable workflow in the global catalog, sorted by workflow ID. Invalid, oversized, and unreadable entries are omitted and shown as warnings. If no valid entries remain, the command reports that state without changing the conversation or configuration. Escape returns to the top-level menu.
+- Selecting a workflow in **Invoke workflow** sends its complete Markdown source exactly as stored through Pi's `sendMessage` custom-message API with `customType: "pi-workflow"`, `display: true`, and `triggerTurn: true`. It appends a visible, persisted conversation entry and starts an agent turn, but does not select a project or role or modify `projects.json`.
 
 ### Agent tools
 

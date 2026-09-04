@@ -4,5 +4,7 @@ import { registerWorkflowTools } from "./tool.js";
 
 export default function piWorkflow(pi: ExtensionAPI): void {
   registerWorkflowTools(pi);
-  registerWorkflowCommand(pi);
+  registerWorkflowCommand(pi, undefined, (message, options) => {
+    pi.sendMessage(message, options);
+  });
 }

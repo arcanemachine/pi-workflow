@@ -1,10 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   WORKFLOW_COMMAND_DESCRIPTION,
   createWorkflowCommandHandler,
   registerWorkflowCommand,
+  type WorkflowCommandUI,
 } from "../src/command.js";
 import { resolveWorkflowPaths } from "../src/paths.js";
 import {
@@ -108,6 +115,42 @@ const del = (value: string, index = 0): HotkeyResult => ({
   index,
 });
 
+interface CommandSelectionCall {
+  title: string;
+  items: string[];
+  cancelLabel?: string;
+}
+
+function scriptedCommandUI(
+  selections: Array<string | null>,
+  onNotify?: (message: string, type?: "info" | "warning" | "error") => void,
+): {
+  ui: WorkflowCommandUI;
+  calls: CommandSelectionCall[];
+  descriptions: string[][];
+} {
+  const calls: CommandSelectionCall[] = [];
+  const descriptions: string[][] = [];
+  return {
+    ui: {
+      async select(title, items, cancelLabel) {
+        calls.push({
+          title,
+          items: items.map((item) => item.label),
+          cancelLabel,
+        });
+        descriptions.push(items.map((item) => item.description ?? ""));
+        return selections.shift() ?? null;
+      },
+      notify(message, type) {
+        onNotify?.(message, type);
+      },
+    },
+    calls,
+    descriptions,
+  };
+}
+
 describe("/workflows registration and guards", () => {
   it("registers exactly the workflow command with its approved description", () => {
     let name: string | undefined;
@@ -120,6 +163,38 @@ describe("/workflows registration and guards", () => {
     });
     expect(name).toBe("workflows");
     expect(description).toBe(WORKFLOW_COMMAND_DESCRIPTION);
+  });
+
+  it("passes the injected message action through the registered handler", async () => {
+    const paths = setup();
+    const content = validWorkflow();
+    writeFileSync(join(paths.workflowDir, "registered.md"), content);
+    const { context } = fakeContext();
+    const scripted = scriptedCommandUI(["invoke-workflow", "registered"]);
+    const sent: unknown[] = [];
+    let handler:
+      | ((args: string, commandContext: typeof context) => Promise<void>)
+      | undefined;
+
+    registerWorkflowCommand(
+      {
+        registerCommand(_name, options) {
+          handler = options.handler as typeof handler;
+        },
+      },
+      () => paths,
+      (message, options) => sent.push({ message, options }),
+      () => scripted.ui,
+    );
+
+    await handler?.("", context);
+
+    expect(sent).toEqual([
+      {
+        message: { customType: "pi-workflow", content, display: true },
+        options: { triggerTurn: true },
+      },
+    ]);
   });
 
   it("rejects arguments with usage and does not resolve paths", async () => {
@@ -144,6 +219,163 @@ describe("/workflows registration and guards", () => {
 
     expect(resolved).toBe(false);
     expect(notifications[0].message).toContain("UI_UNAVAILABLE");
+  });
+});
+
+describe("workflow command menu", () => {
+  it("shows the exact top-level actions and exits on Escape", async () => {
+    const paths = setup();
+    const { context } = fakeContext();
+    const scripted = scriptedCommandUI([null]);
+
+    await createWorkflowCommandHandler(
+      () => paths,
+      undefined,
+      () => scripted.ui,
+    )("", context);
+
+    expect(scripted.calls).toEqual([
+      {
+        title: "Workflows",
+        items: ["Edit project workflows", "Invoke workflow"],
+        cancelLabel: "exit",
+      },
+    ]);
+  });
+
+  it("routes Edit project workflows through the configurator and reopens the top menu", async () => {
+    const paths = setup();
+    const { context } = fakeContext();
+    const scripted = scriptedCommandUI(["edit-project-workflows", null]);
+    let configured = 0;
+
+    await createWorkflowCommandHandler(
+      () => paths,
+      undefined,
+      () => scripted.ui,
+      async () => {
+        configured += 1;
+      },
+    )("", context);
+
+    expect(configured).toBe(1);
+    expect(scripted.calls).toHaveLength(2);
+    expect(scripted.calls[1]).toEqual(scripted.calls[0]);
+  });
+
+  it("cancels invocation back to the top menu without inserting or changing configuration", async () => {
+    const paths = setup();
+    const workflowContent = validWorkflow();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), workflowContent);
+    const projectsContent = JSON.stringify({ version: 1, projects: {} });
+    writeFileSync(paths.projectsFile, projectsContent);
+    const { context } = fakeContext();
+    const scripted = scriptedCommandUI(["invoke-workflow", null, null]);
+    const sent: unknown[] = [];
+
+    await createWorkflowCommandHandler(
+      () => paths,
+      (message, options) => sent.push({ message, options }),
+      () => scripted.ui,
+    )("", context);
+
+    expect(sent).toEqual([]);
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(projectsContent);
+    expect(scripted.calls.map((call) => call.title)).toEqual([
+      "Workflows",
+      "Invoke workflow",
+      "Workflows",
+    ]);
+  });
+
+  it("lists valid global workflows in id order, warns for invalid entries, and inserts exact raw content", async () => {
+    const paths = setup();
+    const first = validWorkflow({ title: "First", body: "# First\n" });
+    const second = validWorkflow({ title: "Second", body: "# Second\n" });
+    writeFileSync(join(paths.workflowDir, "z-second.md"), second);
+    writeFileSync(join(paths.workflowDir, "a-first.md"), first);
+    writeFileSync(join(paths.workflowDir, "broken.md"), "not workflow");
+    symlinkSync(
+      join(paths.workflowDir, "missing-target.md"),
+      join(paths.workflowDir, "unreadable.md"),
+    );
+    const projectsContent = JSON.stringify({ version: 1, projects: {} });
+    writeFileSync(paths.projectsFile, projectsContent);
+    const { context, notifications } = fakeContext();
+    const scripted = scriptedCommandUI(
+      ["invoke-workflow", "z-second"],
+      (message, type) => notifications.push({ message, type }),
+    );
+    const sent: Array<{ message: unknown; options: unknown }> = [];
+
+    await createWorkflowCommandHandler(
+      () => paths,
+      (message, options) => sent.push({ message, options }),
+      () => scripted.ui,
+    )("", context);
+
+    expect(scripted.calls[1]).toEqual({
+      title: "Invoke workflow",
+      items: ["a-first", "z-second"],
+      cancelLabel: "back",
+    });
+    expect(scripted.descriptions[1]).toEqual([
+      "Do one bounded task.",
+      "Do one bounded task.",
+    ]);
+    expect(notifications).toContainEqual({
+      message: expect.stringContaining("INVALID_WORKFLOW"),
+      type: "warning",
+    });
+    expect(notifications).toContainEqual({
+      message: expect.stringContaining("READ_FAILED"),
+      type: "warning",
+    });
+    expect(sent).toEqual([
+      {
+        message: {
+          customType: "pi-workflow",
+          content: second,
+          display: true,
+        },
+        options: { triggerTurn: true },
+      },
+    ]);
+    expect(readFileSync(paths.projectsFile, "utf8")).toBe(projectsContent);
+  });
+
+  it("omits oversized workflows and reports an empty valid catalog without insertion", async () => {
+    const paths = setup();
+    writeFileSync(
+      join(paths.workflowDir, "oversized.md"),
+      `${validWorkflow()}${"x".repeat(32 * 1024)}`,
+    );
+    const { context, notifications } = fakeContext();
+    const scripted = scriptedCommandUI(
+      ["invoke-workflow", null, null],
+      (message, type) => notifications.push({ message, type }),
+    );
+    const sent: unknown[] = [];
+
+    await createWorkflowCommandHandler(
+      () => paths,
+      (message) => sent.push(message),
+      () => scripted.ui,
+    )("", context);
+
+    expect(sent).toEqual([]);
+    expect(notifications).toContainEqual({
+      message: expect.stringContaining("WORKFLOW_TOO_LARGE"),
+      type: "warning",
+    });
+    expect(notifications).toContainEqual({
+      message: "No valid workflows are available to invoke.",
+      type: "warning",
+    });
+    expect(scripted.calls.map((call) => call.title)).toEqual([
+      "Workflows",
+      "Workflows",
+    ]);
   });
 });
 
