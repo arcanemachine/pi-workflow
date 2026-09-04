@@ -5,10 +5,14 @@ import { WorkflowError } from "../src/errors.js";
 import { resolveWorkflowPaths } from "../src/paths.js";
 import {
   WORKFLOW_PROMPT_GUIDELINES,
-  WORKFLOW_PROMPT_SNIPPET,
-  createWorkflowTool,
-  executeWorkflowTool,
-  registerWorkflowTool,
+  WORKFLOW_PROMPT_SNIPPETS,
+  createWorkflowListTool,
+  createWorkflowReadMetadataTool,
+  createWorkflowReadTool,
+  executeWorkflowList,
+  executeWorkflowRead,
+  executeWorkflowReadMetadata,
+  registerWorkflowTools,
 } from "../src/tool.js";
 import type { ProjectsFileV1 } from "../src/types.js";
 import {
@@ -33,7 +37,7 @@ function writeProjects(
   writeFileSync(paths.projectsFile, JSON.stringify(value));
 }
 
-function text(result: ReturnType<typeof executeWorkflowTool>): string {
+function text(result: ReturnType<typeof executeWorkflowList>): string {
   const content = result.content[0];
   if (!content || content.type !== "text")
     throw new Error("expected text result");
@@ -67,37 +71,61 @@ const testTheme = {
   fg: (color: string, value: string) => `[${color}]${value}`,
 };
 
-describe("pi_workflow registration", () => {
-  it("registers one tool with clear schema actions and prompt metadata", () => {
-    let registered: ReturnType<typeof createWorkflowTool> | undefined;
-    registerWorkflowTool({
+describe("workflow tool registration", () => {
+  it("registers namespaced tools with focused schemas and prompt metadata", () => {
+    const tools: Array<{
+      name: string;
+      promptSnippet?: string;
+      promptGuidelines?: readonly string[];
+      parameters: unknown;
+    }> = [];
+    registerWorkflowTools({
       registerTool(tool) {
-        registered = tool as unknown as ReturnType<typeof createWorkflowTool>;
+        tools.push(tool);
       },
     });
 
-    expect(registered?.name).toBe("pi_workflow");
-    expect(registered?.promptSnippet).toBe(WORKFLOW_PROMPT_SNIPPET);
-    expect(registered?.promptGuidelines).toEqual([
-      ...WORKFLOW_PROMPT_GUIDELINES,
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "pi_workflow_list",
+      "pi_workflow_read_metadata",
+      "pi_workflow_read",
     ]);
-    expect(registered?.promptGuidelines).toHaveLength(6);
-    expect(
-      registered?.promptGuidelines?.every((guideline) => guideline.length > 0),
-    ).toBe(true);
+    expect(tools.map((tool) => tool.promptSnippet)).toEqual([
+      WORKFLOW_PROMPT_SNIPPETS.list,
+      WORKFLOW_PROMPT_SNIPPETS.readMetadata,
+      WORKFLOW_PROMPT_SNIPPETS.read,
+    ]);
+    const guidelineSets = [
+      WORKFLOW_PROMPT_GUIDELINES.list,
+      WORKFLOW_PROMPT_GUIDELINES.readMetadata,
+      WORKFLOW_PROMPT_GUIDELINES.read,
+    ];
+    tools.forEach((tool, index) => {
+      expect(tool.promptGuidelines).toEqual([...guidelineSets[index]!]);
+      expect(
+        tool.promptGuidelines?.every((guideline) =>
+          guideline.includes("pi_workflow"),
+        ),
+      ).toBe(true);
+    });
 
-    const schema = JSON.stringify(registered?.parameters);
-    expect(schema).toContain("list_global");
-    expect(schema).toContain("Project ID configured");
-    expect(schema).not.toContain("filesystem path");
-    expect(schema).toContain("workflow filename stem");
+    const listSchema = JSON.stringify(tools[0]?.parameters);
+    const readMetadataSchema = JSON.stringify(tools[1]?.parameters);
+    const readSchema = JSON.stringify(tools[2]?.parameters);
+    expect(listSchema).toContain("global workflow catalog");
+    expect(listSchema).toContain("repository name");
+    expect(readMetadataSchema).toContain("workflow filename stem");
+    expect(readSchema).toContain("workflow filename stem");
   });
 
-  it("encodes every required behavioral guardrail", () => {
-    const guidance = WORKFLOW_PROMPT_GUIDELINES.join("\n");
-    expect(guidance).toMatch(/project workflow/);
-    expect(guidance).toMatch(/global-workflow request/);
-    expect(guidance).toMatch(/without a project probe/);
+  it("encodes scope, fallback, approval, role, and mutation guardrails", () => {
+    const guidance = Object.values(WORKFLOW_PROMPT_GUIDELINES)
+      .flat()
+      .join("\n");
+    expect(guidance).toMatch(/known configured project/);
+    expect(guidance).toMatch(/omit project/);
+    expect(guidance).toMatch(/working directory or repository name/);
+    expect(guidance).toMatch(/retry pi_workflow_list without project/);
     expect(guidance).toMatch(/conversational approval/);
     expect(guidance).toMatch(/first standalone item exactly/);
     expect(guidance).toMatch(/role instructions/);
@@ -107,8 +135,8 @@ describe("pi_workflow registration", () => {
   });
 });
 
-describe("pi_workflow successful actions", () => {
-  it("lists all project workflow metadata grouped by role with diagnostics", () => {
+describe("workflow listing and reading", () => {
+  it("lists project metadata when project is supplied and global metadata otherwise", () => {
     const paths = setup();
     mkdirSync(paths.rolesDir);
     writeFileSync(join(paths.rolesDir, "architect.md"), "filename only");
@@ -130,51 +158,50 @@ describe("pi_workflow successful actions", () => {
       },
     });
 
-    const output = text(
-      executeWorkflowTool({ action: "list", project: "demo" }, paths),
+    const project = text(executeWorkflowList({ project: "demo" }, paths));
+    expect(project).toContain("Project workflow list: demo");
+    expect(project.match(/bounded-work: Bounded work/g)).toHaveLength(1);
+    expect(project).toContain("missing [missing]");
+    expect(project).toContain("Workflows assigned by role:");
+    expect(project).toContain("- architect: bounded-work, missing");
+    expect(project).toContain(
+      "- sergeant [unavailable]: bounded-work, invalid",
     );
+    expect(project).toContain("invalid [invalid: INVALID_WORKFLOW]");
+    expect(project).not.toContain("unconfigured");
 
-    expect(output).toContain("Workflows:");
-    expect(output.match(/bounded-work: Bounded work/g)).toHaveLength(1);
-    expect(output).toContain("missing [missing]");
-    expect(output).toContain("Workflows assigned by role:");
-    expect(output).toContain("- architect: bounded-work, missing");
-    expect(output).toContain("- sergeant [unavailable]: bounded-work, invalid");
-    expect(output).toContain("invalid [invalid: INVALID_WORKFLOW]");
-    expect(output).not.toContain("unconfigured");
+    const global = text(executeWorkflowList({}, paths));
+    expect(global).toContain("Global workflow catalog:");
+    expect(global).toContain("bounded-work: Bounded work");
+    expect(global).toContain("invalid [invalid:");
+    expect(global).not.toContain("Follow the instructions");
   });
 
-  it("keeps empty catalogs and individual invalid entries as successful results", () => {
-    const paths = setup();
-    writeProjects(paths, { version: 1, projects: { demo: { roles: {} } } });
-
-    expect(
-      text(executeWorkflowTool({ action: "list", project: "demo" }, paths)),
-    ).toContain("(empty");
-    expect(
-      text(executeWorkflowTool({ action: "list_global" }, paths)),
-    ).toContain("(empty)");
-
-    writeFileSync(join(paths.workflowDir, "invalid.md"), "invalid");
-    const global = text(executeWorkflowTool({ action: "list_global" }, paths));
-    expect(global).toContain("invalid [invalid: INVALID_WORKFLOW]");
-  });
-
-  it("lists global metadata and invalid diagnostics without workflow bodies", () => {
-    const paths = setup();
-    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
-    writeFileSync(join(paths.workflowDir, "invalid.md"), "invalid");
-
-    const output = text(executeWorkflowTool({ action: "list_global" }, paths));
-
-    expect(output).toContain("bounded-work: Bounded work");
-    expect(output).toContain("invalid [invalid:");
-    expect(output).not.toContain("Follow the instructions");
-  });
-
-  it("reads complete metadata without body and complete raw Markdown", () => {
+  it("supports global metadata and complete reads without a project file", () => {
     const paths = setup();
     const raw = validWorkflow({ extra: "custom:\n  nested: true" });
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), raw);
+
+    const metadata = text(
+      executeWorkflowReadMetadata({ workflow: "bounded-work" }, paths),
+    );
+    const full = text(executeWorkflowRead({ workflow: "bounded-work" }, paths));
+
+    expect(metadata).toContain(
+      "Project assignment: not checked because no project was supplied.",
+    );
+    expect(metadata).toContain('"custom":{"nested":true}');
+    expect(metadata).toContain("Source:");
+    expect(metadata).not.toContain("Follow the instructions");
+    expect(full).toContain(
+      "Project assignment: not checked because no project was supplied.",
+    );
+    expect(full.endsWith(raw)).toBe(true);
+  });
+
+  it("keeps deliberate project assignment context on individual reads", () => {
+    const paths = setup();
+    const raw = validWorkflow();
     writeFileSync(join(paths.workflowDir, "bounded-work.md"), raw);
     writeProjects(paths, {
       version: 1,
@@ -182,86 +209,85 @@ describe("pi_workflow successful actions", () => {
     });
 
     const metadata = text(
-      executeWorkflowTool(
-        { action: "read_metadata", project: "demo", workflow: "bounded-work" },
+      executeWorkflowReadMetadata(
+        { project: "demo", workflow: "bounded-work" },
         paths,
       ),
     );
     const full = text(
-      executeWorkflowTool(
-        { action: "read", project: "demo", workflow: "bounded-work" },
-        paths,
-      ),
+      executeWorkflowRead({ project: "demo", workflow: "bounded-work" }, paths),
     );
 
-    expect(metadata).toContain('"custom":{"nested":true}');
-    expect(metadata).toContain("Source:");
-    expect(metadata).not.toContain("Follow the instructions");
+    expect(metadata).toContain(
+      "Project assignment: bounded-work is configured for 1 role(s) in demo: architect.",
+    );
     expect(full).toContain("configured for 1 role(s)");
     expect(full.endsWith(raw)).toBe(true);
   });
+
+  it("keeps empty catalogs as successful results", () => {
+    const paths = setup();
+    writeProjects(paths, { version: 1, projects: { demo: { roles: {} } } });
+
+    expect(text(executeWorkflowList({ project: "demo" }, paths))).toContain(
+      "(empty",
+    );
+    expect(text(executeWorkflowList({}, paths))).toContain("(empty)");
+  });
 });
 
-describe("pi_workflow failure boundaries", () => {
-  it("throws typed domain errors and wraps only unexpected errors", () => {
+describe("workflow tool failure boundaries", () => {
+  it("keeps project misses explicit while allowing a global retry", () => {
     const paths = setup();
+    writeFileSync(join(paths.workflowDir, "bounded-work.md"), validWorkflow());
     writeProjects(paths, {
       version: 1,
       projects: { demo: { roles: {} } },
     });
 
+    const error = thrownError(() =>
+      executeWorkflowList({ project: "pi" }, paths),
+    );
+    expect(error).toMatchObject({ code: "PROJECT_NOT_FOUND" });
+    expect(error.message).toContain("Configured projects: demo");
+    expect(error.message).toMatch(/retry the operation without project/i);
+
+    const global = text(executeWorkflowList({}, paths));
+    expect(global).toContain("Global workflow catalog:");
+    expect(global).toContain("bounded-work: Bounded work");
+  });
+
+  it("rejects inferred filesystem paths as project IDs", () => {
+    const paths = setup();
+    writeProjects(paths, { version: 1, projects: { demo: { roles: {} } } });
+
+    const error = thrownError(() =>
+      executeWorkflowList({ project: "/workspace/projects/pi" }, paths),
+    );
+    expect(error).toMatchObject({ code: "INVALID_ID" });
+    expect(error.message).toContain("not a filesystem path");
+    expect(error.message).toMatch(/without project/i);
+    expect(Buffer.byteLength(error.message, "utf8")).toBeLessThan(48 * 1024);
+  });
+
+  it("preserves required-argument, workflow, project-file, and catalog errors", () => {
+    const paths = setup();
+    writeProjects(paths, { version: 1, projects: { demo: { roles: {} } } });
+
     expect(
-      thrownError(() => executeWorkflowTool({ action: "list" }, paths)),
+      thrownError(() =>
+        executeWorkflowReadMetadata({ workflow: undefined as never }, paths),
+      ),
     ).toMatchObject({ code: "INVALID_ARGUMENT" });
     expect(
-      thrownError(() =>
-        executeWorkflowTool({ action: "read", workflow: "missing" }, paths),
-      ),
+      thrownError(() => executeWorkflowRead({ workflow: "missing" }, paths)),
     ).toMatchObject({ code: "WORKFLOW_NOT_FOUND" });
-    expect(
-      thrownError(() =>
-        executeWorkflowTool({ action: "list_global" }, {
-          get workflowDir(): string {
-            throw new Error("unexpected failure");
-          },
-        } as unknown as ReturnType<typeof resolveWorkflowPaths>),
-      ),
-    ).toMatchObject({ code: "READ_FAILED", message: "unexpected failure" });
-  });
 
-  it("preserves known size errors instead of converting them to READ_FAILED", () => {
-    const paths = setup();
-    for (const id of ["one", "two", "three"]) {
-      writeFileSync(
-        join(paths.workflowDir, `${id}.md`),
-        validWorkflow({ summary: id.repeat(9_000) }),
-      );
-    }
-
-    expect(
-      thrownError(() => executeWorkflowTool({ action: "list_global" }, paths)),
-    ).toMatchObject({ code: "CATALOG_TOO_LARGE" });
-
-    writeFileSync(
-      join(paths.workflowDir, "large.md"),
-      `${validWorkflow()}\n${"x".repeat(33 * 1024)}`,
-    );
-    expect(
-      thrownError(() =>
-        executeWorkflowTool({ action: "read", workflow: "large" }, paths),
-      ),
-    ).toMatchObject({ code: "WORKFLOW_TOO_LARGE" });
-  });
-
-  it("preserves project-file errors and fails unusable catalog roots", () => {
     const malformedPaths = setup();
     writeFileSync(malformedPaths.projectsFile, "{");
     expect(
       thrownError(() =>
-        executeWorkflowTool(
-          { action: "list", project: "demo" },
-          malformedPaths,
-        ),
+        executeWorkflowList({ project: "demo" }, malformedPaths),
       ),
     ).toMatchObject({ code: "INVALID_PROJECTS_FILE" });
 
@@ -272,10 +298,7 @@ describe("pi_workflow failure boundaries", () => {
     );
     expect(
       thrownError(() =>
-        executeWorkflowTool(
-          { action: "list", project: "demo" },
-          unsupportedPaths,
-        ),
+        executeWorkflowList({ project: "demo" }, unsupportedPaths),
       ),
     ).toMatchObject({ code: "UNSUPPORTED_PROJECTS_VERSION" });
 
@@ -283,94 +306,57 @@ describe("pi_workflow failure boundaries", () => {
     rmSync(catalogPaths.workflowDir, { recursive: true });
     writeFileSync(catalogPaths.workflowDir, "not a directory");
     expect(
-      thrownError(() =>
-        executeWorkflowTool({ action: "list_global" }, catalogPaths),
-      ),
+      thrownError(() => executeWorkflowList({}, catalogPaths)),
     ).toMatchObject({
       code: "READ_FAILED",
       message: "Cannot inspect the workflow catalog.",
     });
   });
 
-  it("provides bounded, conditional recovery for invalid and unknown projects", () => {
+  it("preserves size errors for global catalogs and individual reads", () => {
     const paths = setup();
-    const projects: ProjectsFileV1["projects"] = {};
-    for (let index = 0; index < 300; index++) {
-      projects[`project-${String(index).padStart(3, "0")}`] = { roles: {} };
-    }
-    writeProjects(paths, { version: 1, projects });
-
-    const invalid = thrownError(() =>
-      executeWorkflowTool(
-        { action: "list", project: "/workspace/projects/pi" },
-        paths,
-      ),
-    );
-    const unknown = thrownError(() =>
-      executeWorkflowTool({ action: "list", project: "unknown" }, paths),
-    );
-
-    for (const error of [invalid, unknown]) {
-      expect(error.message).toContain("Configured projects:");
-      expect(error.message).toContain('action "list_global" with no project');
-      expect(error.message).toMatch(/explicitly requested the global catalog/i);
-      expect(Buffer.byteLength(error.message, "utf8")).toBeLessThan(48 * 1024);
-    }
-    const noProjects = thrownError(() =>
-      executeWorkflowTool(
-        { action: "list", project: "/workspace/projects/pi" },
-        setup(),
-      ),
-    );
-    expect(noProjects.message).toContain("Configured projects: (none)");
-    expect(invalid).toMatchObject({ code: "INVALID_ID" });
-    expect(invalid.message).toContain("not a filesystem path");
-    expect(unknown).toMatchObject({ code: "PROJECT_NOT_FOUND" });
-    expect(unknown.message).toContain("project-000, project-001");
-    expect(
-      thrownError(() =>
-        executeWorkflowTool(
-          {
-            action: "read_metadata",
-            project: "/workspace/projects/pi",
-            workflow: "missing",
-          },
-          paths,
-        ),
-      ),
-    ).toMatchObject({ code: "INVALID_ID" });
-  });
-
-  it("rejects every public failure action with one code prefix and its code", async () => {
-    const paths = setup();
-    writeProjects(paths, { version: 1, projects: { demo: { roles: {} } } });
     for (const id of ["one", "two", "three"]) {
       writeFileSync(
         join(paths.workflowDir, `${id}.md`),
         validWorkflow({ summary: id.repeat(9_000) }),
       );
     }
-    const tool = createWorkflowTool(() => paths);
+
+    expect(thrownError(() => executeWorkflowList({}, paths))).toMatchObject({
+      code: "CATALOG_TOO_LARGE",
+    });
+
+    writeFileSync(
+      join(paths.workflowDir, "large.md"),
+      `${validWorkflow()}\n${"x".repeat(33 * 1024)}`,
+    );
+    expect(
+      thrownError(() => executeWorkflowRead({ workflow: "large" }, paths)),
+    ).toMatchObject({ code: "WORKFLOW_TOO_LARGE" });
+  });
+
+  it("rejects public failures with one code prefix and no stack trace", async () => {
+    const paths = setup();
+    writeProjects(paths, { version: 1, projects: { demo: { roles: {} } } });
+    const tool = createWorkflowListTool(() => paths);
+    const readMetadataTool = createWorkflowReadMetadataTool(() => paths);
+    const readTool = createWorkflowReadTool(() => paths);
 
     const failures = [
-      [
-        "list",
-        { action: "list", project: "/workspace/projects/pi" },
-        "INVALID_ID",
-      ],
-      ["list", { action: "list", project: "unknown" }, "PROJECT_NOT_FOUND"],
-      ["list_global", { action: "list_global" }, "CATALOG_TOO_LARGE"],
-      [
-        "read_metadata",
-        { action: "read_metadata", workflow: "missing" },
-        "WORKFLOW_NOT_FOUND",
-      ],
-      ["read", { action: "read", workflow: "missing" }, "WORKFLOW_NOT_FOUND"],
+      [tool, { project: "unknown" }, "PROJECT_NOT_FOUND"],
+      [readMetadataTool, { workflow: "missing" }, "WORKFLOW_NOT_FOUND"],
+      [readTool, { workflow: "missing" }, "WORKFLOW_NOT_FOUND"],
     ] as const;
 
-    for (const [_action, params, code] of failures) {
+    for (const [registeredTool, params, code] of failures) {
       const error = await rejectedError(() =>
-        tool.execute("call", params, undefined, undefined, undefined as never),
+        registeredTool.execute(
+          "call",
+          params as never,
+          undefined,
+          undefined,
+          undefined as never,
+        ),
       );
       expect(error).toMatchObject({ code });
       expect(error.message).toMatch(new RegExp(`^${code}: `));
@@ -383,14 +369,14 @@ describe("pi_workflow failure boundaries", () => {
   });
 });
 
-describe("pi_workflow rendering", () => {
+describe("workflow tool rendering", () => {
   it("keeps successful collapsed output hidden and failed output visible", () => {
-    const tool = createWorkflowTool();
+    const tool = createWorkflowListTool();
     const renderResult = tool.renderResult!;
     const renderCall = tool.renderCall!;
     const result = {
       content: [{ type: "text" as const, text: "PROJECT_NOT_FOUND: recover" }],
-      details: { action: "list" as const },
+      details: {},
     };
 
     const successful = renderResult(
@@ -412,7 +398,7 @@ describe("pi_workflow rendering", () => {
       { isError: true } as never,
     );
     const call = renderCall(
-      { action: "list", project: "unknown" },
+      { project: "unknown" },
       testTheme as never,
       { isError: true, expanded: false } as never,
     );
@@ -425,7 +411,7 @@ describe("pi_workflow rendering", () => {
     expect(expandedFailure.render(200).join("\n")).toContain(
       "PROJECT_NOT_FOUND: recover",
     );
-    expect(call.render(200).join("\n")).toContain("pi_workflow error");
+    expect(call.render(200).join("\n")).toContain("pi_workflow_list error");
     expect(call.render(200).join("\n")).toContain("[error]");
   });
 });

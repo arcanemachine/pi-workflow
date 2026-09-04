@@ -2,9 +2,9 @@
 
 A thin workflow-catalog extension for [Pi](https://pi.dev).
 
-`pi-workflow` lets users maintain a central project workflow list grouped by role, while keeping complete workflow guidance in global Markdown files. Agents list project metadata in bulk, recommend an appropriate workflow from that metadata, obtain explicit user approval, and then read only the selected workflow.
+`pi-workflow` lets users maintain a central project workflow list grouped by role, while keeping complete workflow guidance in global Markdown files. Agents use project metadata when a relevant configured project is known, use the global catalog for non-project work, recommend an appropriate workflow from bulk metadata, obtain explicit user approval, and then read only the selected workflow.
 
-V1 is implemented and release-ready: a deterministic catalog, a read-only `pi_workflow` tool, and a `/workflows` configuration command that manages project and role ids and their workflow assignments.
+V1 is implemented and release-ready: a deterministic catalog, namespaced read-only workflow tools, and a `/workflows` configuration command that manages project and role ids and their workflow assignments.
 
 ## V1 model
 
@@ -59,7 +59,7 @@ The package ships no workflow definitions. Workflows are project-specific conten
 
 ### `projects.json`
 
-`projects.json` maps exact lowercase-kebab project IDs to roles and workflow IDs. A tool `project` argument is one of these configured IDs, never a filesystem path, repository basename, or inferred working directory. It stores no project paths and no active workflow state.
+`projects.json` maps exact lowercase-kebab project IDs to roles and workflow IDs. A tool `project` argument, when supplied, is one of these configured IDs, never a filesystem path, repository basename, or inferred working directory. Listing and individual workflow reads omit `project` for global work. It stores no project paths and no active workflow state.
 
 ```json
 {
@@ -97,27 +97,26 @@ The command opens a Pi TUI with three layers: a **project** menu, a **role** men
   - `d` — **delete** the hovered id. Opens a "Delete …?" Yes/No picker with **No as the safe default** (Yes is above No, cursor starts on No). Esc or Enter-on-No cancels; move Up to Yes and Enter to delete. Deleting a project removes it and all its workflow assignments; deleting a role removes it and its assignments. No confirmation on the cancel path.
   - Enter (no modifier) on a hovered project or role descends to the next layer. A role with no global role filename under `~/.pi/agent/roles/` is shown once configured, annotated `[unavailable]`; configuring a role is done by creating its id with `n` and then assigning workflows.
 - The **workflow layer** uses a searchable on/off toggle list to pick which already-defined global workflows belong to a role. Workflows are defined by their Markdown files; `/workflows` does not create, edit, or delete workflow files.
-- A missing workflow stays visible (labelled `[missing]`) and is removable; an invalid workflow file stays visible (labelled `[invalid]`, with the validation message as the item description) without blocking configuration of valid ones. The `pi_workflow` tool output separately marks invalid entries as `[invalid: CODE, …]`.
+- A missing workflow stays visible (labelled `[missing]`) and is removable; an invalid workflow file stays visible (labelled `[invalid]`, with the validation message as the item description) without blocking configuration of valid ones. The workflow listing tool output separately marks invalid entries as `[invalid: CODE, …]`.
 - Escape navigates one menu level upward. At the top level, Escape with staged changes opens a save-before-exit confirmation (saving is the default); Escape from that confirmation returns to the menu. With no staged changes, Escape exits immediately. Cancellation writes nothing.
 
-### Agent tool: `pi_workflow`
+### Agent tools
 
-One **read-only** tool provides four actions. Results are bounded to 48 KiB; an oversized project listing returns `CATALOG_TOO_LARGE` and an oversized single workflow returns `WORKFLOW_TOO_LARGE`.
+Three **read-only** namespaced tools keep listing, metadata inspection, and approved Markdown reads distinct. Results are bounded to 48 KiB; an oversized bulk listing returns `CATALOG_TOO_LARGE` and an oversized single workflow returns `WORKFLOW_TOO_LARGE`.
 
-| Action          | Required args                   | Returns                                                                                                                                                                                                                        |
-| --------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `list`          | `project`                       | All configured workflow metadata for one project, listed per workflow, plus a `Workflows assigned by role` section that maps each role to its assigned workflows. An empty list is valid and points the agent to `/workflows`. |
-| `list_global`   | —                               | All global workflow metadata (frontmatter only, no bodies). Takes no `project`; reserved for explicit user permission to investigate the global catalog.                                                                       |
-| `read_metadata` | `workflow` (`project` optional) | Complete frontmatter as JSON for one workflow, with a project-assignment line.                                                                                                                                                 |
-| `read`          | `workflow` (`project` optional) | The complete Markdown source for one approved workflow, with a project-assignment line.                                                                                                                                        |
+| Tool                        | Required args                  | Returns                                                                                                                                                                            |
+| --------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pi_workflow_list`          | `project` optional             | With a configured `project`, all assigned workflow metadata for that project plus role assignments. Without `project`, all global workflow metadata (frontmatter only, no bodies). |
+| `pi_workflow_read_metadata` | `workflow`, `project` optional | Complete frontmatter as JSON for one workflow, with a project-assignment line when `project` is supplied.                                                                          |
+| `pi_workflow_read`          | `workflow`, `project` optional | The complete Markdown source for one approved workflow, with a project-assignment line when `project` is supplied.                                                                 |
 
-The tool never modifies configuration, edits plans, executes workflows, inspects plans, or tracks lifecycle state. It is one call per logical action: for a project workflow, an agent lists project workflows once, recommends from that metadata, asks for approval as a standalone numbered item, and only then reads the chosen workflow. A direct request about a global workflow explicitly permits `list_global` without a project probe; a generic workflow request remains project-first. A failed project lookup never falls back to the global catalog.
+Use project context when the task belongs to a known configured project. For non-project work, or when no relevant configured project is known, omit `project` and use the global catalog. Do not infer a project ID solely from the working directory or repository name. If a supplied project is not configured, the tool reports `PROJECT_NOT_FOUND`; retrying the same operation without `project` is allowed when global context may help.
 
-The prompt guidelines shipped with the tool encode this contract, including: the agent identifies its role from its own instructions and recommends only workflows assigned to that role; workflows assigned to other roles are coordination context, not candidates; and this role-based selection is a behavioral contract, not runtime enforcement — the tool does not query or depend on any role extension.
+The tools never modify configuration, edit plans, execute workflows, inspect plans, or track lifecycle state. For project workflow selection, an agent lists project metadata once, recommends from that metadata, asks for approval as a standalone numbered item, and only then reads the chosen workflow. The prompt guidelines also require the active role to come from role instructions, with workflows assigned to other roles treated as coordination context rather than candidates. This role-based selection is a behavioral contract, not runtime enforcement — the tools do not query or depend on any role extension.
 
 ### Tool presentation
 
-`pi_workflow` renders successful calls with a compact one-line summary (`pi_workflow List workflows for practorium`) and an expand hint. Collapsed successful results show nothing until expanded. Semantic and operational failures reject the tool call, so Pi renders its standard error state and keeps the bounded error and recovery text visible while collapsed. The model-visible success content is unchanged.
+The workflow tools render successful calls with compact one-line summaries and an expand hint. Collapsed successful results show nothing until expanded. Semantic and operational failures reject the tool call, so Pi renders its standard error state and keeps the bounded error and recovery text visible while collapsed. The model-visible success content is unchanged.
 
 ## Errors and recovery
 
@@ -125,8 +124,8 @@ The prompt guidelines shipped with the tool encode this contract, including: the
 | ------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | `INVALID_ARGUMENT`             | A required argument was missing or empty.                    | Supply the argument.                                                                                    |
 | `INVALID_ID`                   | A project, role, or workflow ID is not lowercase-kebab-case. | For a project, use a configured lowercase-kebab ID, not a filesystem path.                              |
-| `PROJECT_NOT_FOUND`            | The requested project is not in `projects.json`.             | Use a listed configured project, or only for explicit global intent call `list_global` with no project. |
-| `WORKFLOW_NOT_FOUND`           | The requested workflow file does not exist.                  | Check the ID against `list` output.                                                                     |
+| `PROJECT_NOT_FOUND`            | The requested project is not in `projects.json`.             | Check configured project IDs; when global context may help, retry the same operation without `project`. |
+| `WORKFLOW_NOT_FOUND`           | The requested workflow file does not exist.                  | Check the ID against `pi_workflow_list` output.                                                         |
 | `INVALID_WORKFLOW`             | A workflow file has invalid frontmatter or an empty body.    | Fix the Markdown file; the entry stays visible as `[invalid: …]`.                                       |
 | `INVALID_PROJECTS_FILE`        | `projects.json` is malformed.                                | `/workflows` shows the error and never overwrites the file; fix or remove it by hand.                   |
 | `UNSUPPORTED_PROJECTS_VERSION` | `projects.json` uses a newer than supported `version`.       | Use a compatible version or update `pi-workflow`.                                                       |
@@ -140,7 +139,7 @@ Invalid workflows and unavailable roles are surfaced as diagnostics alongside va
 
 ## Explicitly absent from V1
 
-V1 has no FSM, SQLite database, transitions, revisions, gates, participant bindings, session attachment, role activation, interagent protocol integration, plan parsing, plan-editing tools, workflow execution tools, recursive workflow directories, project-local catalogs, bundled workflow definitions, workflow ID frontmatter fields or aliases, automatic workflow selection, or automatic global-catalog investigation.
+V1 has no FSM, SQLite database, transitions, revisions, gates, participant bindings, session attachment, role activation, interagent protocol integration, plan parsing, plan-editing tools, workflow execution tools, recursive workflow directories, project-local catalogs, bundled workflow definitions, workflow ID frontmatter fields or aliases, or automatic workflow selection.
 
 ## Development
 

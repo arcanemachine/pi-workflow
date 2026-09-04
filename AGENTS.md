@@ -2,7 +2,7 @@
 
 ## Current status
 
-`pi-workflow` V1 is implemented and release-ready: a thin global Markdown workflow catalog, a read-only `pi_workflow` tool with four actions, an atomic restrictive `projects.json`, and a `/workflows` configuration command that creates, renames, and deletes project and role ids via `n`/`r`/`d` hotkeys and assigns workflows through a searchable toggle list.
+`pi-workflow` V1 is implemented and release-ready: a thin global Markdown workflow catalog, namespaced read-only workflow tools, an atomic restrictive `projects.json`, and a `/workflows` configuration command that creates, renames, and deletes project and role ids via `n`/`r`/`d` hotkeys and assigns workflows through a searchable toggle list.
 
 The former FSM/SQLite/interagent design was abandoned and intentionally deleted. Do not recover it from Git history or reintroduce it during V1.
 
@@ -17,8 +17,8 @@ It provides:
 - global workflow discovery from `join(getAgentDir(), "workflows")`;
 - central project workflow lists grouped by role;
 - one `/workflows` configuration command;
-- one read-only `pi_workflow` tool;
-- prompt guardrails for project-first discovery and explicit workflow approval.
+- namespaced read-only workflow tools for listing, metadata, and approved Markdown;
+- prompt guardrails for contextual project/global discovery and explicit workflow approval.
 
 It does not provide:
 
@@ -57,8 +57,8 @@ Keep modules focused. Do not create generic repositories, adapters, service loca
 The exact tool and prompt behavior lives in the tool's shipped prompt guidelines and this file's essentials. Preserve these essentials:
 
 - list project workflows in bulk before recommending a project workflow;
-- a direct request about a global workflow explicitly permits `list_global` without a project probe; generic workflow requests do not;
-- do not inspect the global catalog without explicit user permission;
+- use a known configured project when the task belongs to it, and omit project for non-project work or when no relevant configured project is known;
+- do not infer a project ID solely from the working directory or repository name; after a project lookup fails, global retry is allowed when appropriate;
 - do not read full workflow Markdown before approval or a direct read request;
 - present workflow approval as the first standalone numbered decision;
 - do not let agents modify `projects.json` through any tool; only the user-operated `/workflows` command may change project workflow lists;

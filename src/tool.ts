@@ -1,4 +1,3 @@
-import { StringEnum } from "@earendil-works/pi-ai";
 import type {
   AgentToolResult,
   ExtensionAPI,
@@ -25,49 +24,71 @@ import type {
   WorkflowMetadataV1,
 } from "./types.js";
 
-export const WORKFLOW_PROMPT_SNIPPET =
-  "List workflow metadata or read an approved workflow.";
+export const WORKFLOW_PROMPT_SNIPPETS = {
+  list: "List project workflow metadata or the global workflow catalog",
+  readMetadata: "Read workflow metadata with optional project context",
+  read: "Read an approved workflow with optional project context",
+} as const;
 
-export const WORKFLOW_PROMPT_GUIDELINES = [
-  "Before recommending a project workflow, call pi_workflow action list once for that project and use its bulk metadata; use read_metadata only for a missing material detail.",
-  "A direct global-workflow request permits pi_workflow global operations without a project probe; otherwise require explicit permission, asking first if no project workflow fits.",
-  "Read workflow Markdown only after conversational approval or a direct read/use request; plan frontmatter is not approval.",
-  "After recommending, make the first standalone item exactly: **1. Workflow approval:** Do you approve using `<workflow-id>`? Approval permits only required plan edits.",
-  "Only workflow-selection or coordination roles select workflows; derive the active role from role instructions, recommend only its assigned workflows, and treat other-role workflows as context.",
-  "Never modify workflow assignments; only /workflows may change projects.json. Treat unavailable or missing markers diagnostically; on CATALOG_TOO_LARGE ask the user to reduce the project list.",
-] as const;
+export const WORKFLOW_PROMPT_GUIDELINES = {
+  list: [
+    "Use pi_workflow_list with a known configured project when the task belongs to that project; omit project for non-project work or when no relevant configured project is known.",
+    "Do not infer a pi_workflow_list project ID solely from the working directory or repository name. If a project lookup fails and global context may help, retry pi_workflow_list without project.",
+    "Before recommending a project workflow, call pi_workflow_list once for that project and use its bulk metadata.",
+    "Only workflow-selection or coordination roles should use pi_workflow_list to select workflows; derive the active role from role instructions, recommend only its assigned workflows, and treat other-role workflows as context.",
+    "Never let pi_workflow_list modify workflow assignments; only /workflows may change projects.json. Treat unavailable or missing markers diagnostically; on CATALOG_TOO_LARGE ask the user to reduce the project workflow list.",
+  ],
+  readMetadata: [
+    "Use pi_workflow_read_metadata for a material detail missing from a listing; do not read every workflow one by one.",
+    "Omitting project from pi_workflow_read_metadata reads the global workflow; supplying project adds an assignment-context check.",
+  ],
+  read: [
+    "Use pi_workflow_read only after conversational approval or a direct read/use request; plan frontmatter is not approval.",
+    "Omitting project from pi_workflow_read reads the global workflow; supplying project adds an assignment-context check.",
+    "When recommending from pi_workflow_list metadata, make the first standalone item exactly: **1. Workflow approval:** Do you approve using `<workflow-id>`? Approval permits only required plan edits.",
+  ],
+} as const;
 
-export const WorkflowToolParameters = Type.Object({
-  action: StringEnum(
-    ["list", "list_global", "read_metadata", "read"] as const,
-    {
-      description:
-        "Operation: list project or permitted global workflows, inspect metadata, or read approved Markdown.",
-    },
-  ),
+export const WorkflowListParameters = Type.Object({
   project: Type.Optional(
     Type.String({
       description:
-        "Project ID configured by /workflows; not a path or repository name.",
+        "Configured project ID from /workflows when the task belongs to that project; omit for the global workflow catalog. Do not infer it from a path or repository name.",
     }),
   ),
-  workflow: Type.Optional(
+});
+
+export const WorkflowReadMetadataParameters = Type.Object({
+  workflow: Type.String({
+    description: "Lowercase-kebab workflow filename stem.",
+  }),
+  project: Type.Optional(
     Type.String({
-      description: "Lowercase-kebab workflow filename stem.",
+      description:
+        "Optional configured project ID for assignment context; omit for global workflow work.",
+    }),
+  ),
+});
+
+export const WorkflowReadParameters = Type.Object({
+  workflow: Type.String({
+    description: "Lowercase-kebab workflow filename stem.",
+  }),
+  project: Type.Optional(
+    Type.String({
+      description:
+        "Optional configured project ID for assignment context; omit for global workflow work.",
     }),
   ),
 });
 
 export interface WorkflowToolDetails {
-  action: "list" | "list_global" | "read_metadata" | "read";
-}
-
-type WorkflowToolParams = {
-  action: "list" | "list_global" | "read_metadata" | "read";
   project?: string;
   workflow?: string;
-};
+}
 
+type WorkflowListParams = { project?: string };
+type WorkflowReadParams = { project?: string; workflow: string };
 type WorkflowToolResult = AgentToolResult<WorkflowToolDetails>;
 
 function truncateUtf8(text: string, maximumBytes: number): string {
@@ -85,31 +106,33 @@ function displayId(id: string): string {
   return id.length <= 160 ? id : `${id.slice(0, 157)}…`;
 }
 
-function renderSummary(args: WorkflowToolParams, isError: boolean): string {
-  if (isError) return "pi_workflow error";
-  switch (args.action) {
-    case "list":
-      return args.project
-        ? `List workflows for ${args.project}`
-        : "List project workflows";
-    case "list_global":
-      return "List global workflows";
-    case "read_metadata":
-      return args.workflow
-        ? `Read metadata: ${args.workflow}`
-        : "Read workflow metadata";
-    case "read":
-      return args.workflow ? `Read ${args.workflow}` : "Read workflow";
+function renderSummary(
+  toolName:
+    | "pi_workflow_list"
+    | "pi_workflow_read_metadata"
+    | "pi_workflow_read",
+  args: WorkflowListParams | WorkflowReadParams,
+  isError: boolean,
+): string {
+  if (isError) return `${toolName} error`;
+  if (toolName === "pi_workflow_list") {
+    return args.project
+      ? `List workflows for ${args.project}`
+      : "List global workflows";
   }
+  const workflow = "workflow" in args ? args.workflow : "workflow";
+  return toolName === "pi_workflow_read_metadata"
+    ? `Read metadata: ${workflow}`
+    : `Read ${workflow}`;
 }
 
 function result(
-  action: WorkflowToolParams["action"],
   text: string,
+  details: WorkflowToolDetails = {},
 ): WorkflowToolResult {
   return {
     content: [{ type: "text", text }],
-    details: { action },
+    details,
   };
 }
 
@@ -133,7 +156,7 @@ function requireArgument(
   if (value === undefined || value.length === 0) {
     throw new WorkflowError(
       "INVALID_ARGUMENT",
-      `${name} is required for this action.`,
+      `${name} is required for this operation.`,
     );
   }
   return value;
@@ -141,7 +164,7 @@ function requireArgument(
 
 const MAX_CONFIGURED_PROJECTS_BYTES = 1_200;
 const GLOBAL_RECOVERY_HINT =
-  'If the user explicitly requested the global catalog or a global workflow, call action "list_global" with no project.';
+  "If this task is not tied to a known configured project, retry the operation without project to inspect the global workflow catalog.";
 
 function configuredProjectIds(
   projects: Record<string, ProjectConfigV1>,
@@ -283,7 +306,7 @@ function listProject(
   );
   const text = lines.join("\n");
   ensureBounded(text, "CATALOG_TOO_LARGE");
-  return result("list", text);
+  return result(text, { project: projectId });
 }
 
 function listGlobal(paths: WorkflowPaths): WorkflowToolResult {
@@ -303,7 +326,7 @@ function listGlobal(paths: WorkflowPaths): WorkflowToolResult {
   lines.push(...diagnosticLines(catalog.diagnostics));
   const text = lines.join("\n");
   ensureBounded(text, "CATALOG_TOO_LARGE");
-  return result("list_global", text);
+  return result(text);
 }
 
 function projectAssignment(
@@ -352,7 +375,7 @@ function readMetadata(
   );
   const text = `${assignment}\nSource: ${workflow.path}\nMetadata: ${JSON.stringify(workflow.metadata)}`;
   ensureBounded(text, "WORKFLOW_TOO_LARGE");
-  return result("read_metadata", text);
+  return result(text, { project: projectId, workflow: workflowId });
 }
 
 function readWorkflow(
@@ -367,32 +390,53 @@ function readWorkflow(
   );
   const text = `${assignment}\n\n${workflow.raw}`;
   ensureBounded(text, "WORKFLOW_TOO_LARGE");
-  return result("read", text);
+  return result(text, { project: projectId, workflow: workflowId });
 }
 
-export function executeWorkflowTool(
-  params: WorkflowToolParams,
+export function executeWorkflowList(
+  params: WorkflowListParams,
   paths: WorkflowPaths,
 ): WorkflowToolResult {
   try {
-    switch (params.action) {
-      case "list":
-        return listProject(requireArgument(params.project, "project"), paths);
-      case "list_global":
-        return listGlobal(paths);
-      case "read_metadata":
-        return readMetadata(
-          requireArgument(params.workflow, "workflow"),
-          params.project,
-          paths,
-        );
-      case "read":
-        return readWorkflow(
-          requireArgument(params.workflow, "workflow"),
-          params.project,
-          paths,
-        );
-    }
+    return params.project === undefined
+      ? listGlobal(paths)
+      : listProject(params.project, paths);
+  } catch (error) {
+    if (error instanceof WorkflowError) throw error;
+    throw new WorkflowError("READ_FAILED", errorDetail(error), {
+      cause: error,
+    });
+  }
+}
+
+export function executeWorkflowReadMetadata(
+  params: WorkflowReadParams,
+  paths: WorkflowPaths,
+): WorkflowToolResult {
+  try {
+    return readMetadata(
+      requireArgument(params.workflow, "workflow"),
+      params.project,
+      paths,
+    );
+  } catch (error) {
+    if (error instanceof WorkflowError) throw error;
+    throw new WorkflowError("READ_FAILED", errorDetail(error), {
+      cause: error,
+    });
+  }
+}
+
+export function executeWorkflowRead(
+  params: WorkflowReadParams,
+  paths: WorkflowPaths,
+): WorkflowToolResult {
+  try {
+    return readWorkflow(
+      requireArgument(params.workflow, "workflow"),
+      params.project,
+      paths,
+    );
   } catch (error) {
     if (error instanceof WorkflowError) throw error;
     throw new WorkflowError("READ_FAILED", errorDetail(error), {
@@ -413,54 +457,127 @@ function toolError(error: WorkflowError): WorkflowError {
   );
 }
 
-export function createWorkflowTool(
+function renderCall(
+  toolName:
+    | "pi_workflow_list"
+    | "pi_workflow_read_metadata"
+    | "pi_workflow_read",
+  args: WorkflowListParams | WorkflowReadParams,
+  theme: Parameters<NonNullable<ToolDefinition["renderCall"]>>[1],
+  context: Parameters<NonNullable<ToolDefinition["renderCall"]>>[2],
+): Text {
+  const summary = `${theme.fg("toolTitle", theme.bold(toolName))} ${theme.fg(context.isError ? "error" : "accent", renderSummary(toolName, args, context.isError))}`;
+  const hint = context.expanded
+    ? ""
+    : theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`);
+  return new Text(`${summary}${hint}`, 0, 0);
+}
+
+function renderResult(
+  result: WorkflowToolResult,
+  options: Parameters<NonNullable<ToolDefinition["renderResult"]>>[1],
+  theme: Parameters<NonNullable<ToolDefinition["renderResult"]>>[2],
+  context: Parameters<NonNullable<ToolDefinition["renderResult"]>>[3],
+): Text {
+  if (!options.expanded && !context.isError) return new Text("", 0, 0);
+  const content = result.content[0];
+  const body = content && content.type === "text" ? content.text : "";
+  return new Text(
+    `\n${theme.fg(context.isError ? "error" : "toolOutput", body)}`,
+    0,
+    0,
+  );
+}
+
+function executeTool<T>(operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    if (error instanceof WorkflowError) throw toolError(error);
+    throw toolError(
+      new WorkflowError("READ_FAILED", errorDetail(error), {
+        cause: error,
+      }),
+    );
+  }
+}
+
+export function createWorkflowListTool(
   pathsProvider: () => WorkflowPaths = productionWorkflowPaths,
-): ToolDefinition<typeof WorkflowToolParameters, WorkflowToolDetails> {
+): ToolDefinition<typeof WorkflowListParameters, WorkflowToolDetails> {
   return {
-    name: "pi_workflow",
-    label: "Pi Workflow",
+    name: "pi_workflow_list",
+    label: "Pi Workflow List",
     description:
-      "Read-only workflow metadata and approved Markdown, limited to 48 KiB.",
-    promptSnippet: WORKFLOW_PROMPT_SNIPPET,
-    promptGuidelines: [...WORKFLOW_PROMPT_GUIDELINES],
-    parameters: WorkflowToolParameters,
+      "List project workflow metadata when project is supplied, or the global workflow catalog when it is omitted. Results are limited to 48 KiB.",
+    promptSnippet: WORKFLOW_PROMPT_SNIPPETS.list,
+    promptGuidelines: [...WORKFLOW_PROMPT_GUIDELINES.list],
+    parameters: WorkflowListParameters,
     async execute(_toolCallId, params) {
-      try {
-        return executeWorkflowTool(params, pathsProvider());
-      } catch (error) {
-        if (error instanceof WorkflowError) throw toolError(error);
-        throw toolError(
-          new WorkflowError("READ_FAILED", errorDetail(error), {
-            cause: error,
-          }),
-        );
-      }
+      return executeTool(() => executeWorkflowList(params, pathsProvider()));
     },
     renderCall(args, theme, context) {
-      const summary = `${theme.fg("toolTitle", theme.bold("pi_workflow"))} ${theme.fg(context.isError ? "error" : "accent", renderSummary(args, context.isError))}`;
-      const hint = context.expanded
-        ? ""
-        : theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`);
-      return new Text(`${summary}${hint}`, 0, 0);
+      return renderCall("pi_workflow_list", args, theme, context);
     },
     renderResult(result, options, theme, context) {
-      if (!options.expanded && !context.isError) {
-        return new Text("", 0, 0);
-      }
-      const content = result.content[0];
-      const body = content && content.type === "text" ? content.text : "";
-      return new Text(
-        `\n${theme.fg(context.isError ? "error" : "toolOutput", body)}`,
-        0,
-        0,
-      );
+      return renderResult(result, options, theme, context);
     },
   };
 }
 
-export function registerWorkflowTool(
+export function createWorkflowReadMetadataTool(
+  pathsProvider: () => WorkflowPaths = productionWorkflowPaths,
+): ToolDefinition<typeof WorkflowReadMetadataParameters, WorkflowToolDetails> {
+  return {
+    name: "pi_workflow_read_metadata",
+    label: "Pi Workflow Metadata",
+    description:
+      "Read one workflow's metadata with optional project assignment context. Results are limited to 48 KiB.",
+    promptSnippet: WORKFLOW_PROMPT_SNIPPETS.readMetadata,
+    promptGuidelines: [...WORKFLOW_PROMPT_GUIDELINES.readMetadata],
+    parameters: WorkflowReadMetadataParameters,
+    async execute(_toolCallId, params) {
+      return executeTool(() =>
+        executeWorkflowReadMetadata(params, pathsProvider()),
+      );
+    },
+    renderCall(args, theme, context) {
+      return renderCall("pi_workflow_read_metadata", args, theme, context);
+    },
+    renderResult(result, options, theme, context) {
+      return renderResult(result, options, theme, context);
+    },
+  };
+}
+
+export function createWorkflowReadTool(
+  pathsProvider: () => WorkflowPaths = productionWorkflowPaths,
+): ToolDefinition<typeof WorkflowReadParameters, WorkflowToolDetails> {
+  return {
+    name: "pi_workflow_read",
+    label: "Pi Workflow Read",
+    description:
+      "Read one approved workflow's complete Markdown with optional project assignment context. Results are limited to 48 KiB.",
+    promptSnippet: WORKFLOW_PROMPT_SNIPPETS.read,
+    promptGuidelines: [...WORKFLOW_PROMPT_GUIDELINES.read],
+    parameters: WorkflowReadParameters,
+    async execute(_toolCallId, params) {
+      return executeTool(() => executeWorkflowRead(params, pathsProvider()));
+    },
+    renderCall(args, theme, context) {
+      return renderCall("pi_workflow_read", args, theme, context);
+    },
+    renderResult(result, options, theme, context) {
+      return renderResult(result, options, theme, context);
+    },
+  };
+}
+
+export function registerWorkflowTools(
   pi: Pick<ExtensionAPI, "registerTool">,
   pathsProvider: () => WorkflowPaths = productionWorkflowPaths,
 ): void {
-  pi.registerTool(createWorkflowTool(pathsProvider));
+  pi.registerTool(createWorkflowListTool(pathsProvider));
+  pi.registerTool(createWorkflowReadMetadataTool(pathsProvider));
+  pi.registerTool(createWorkflowReadTool(pathsProvider));
 }
