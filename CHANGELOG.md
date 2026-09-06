@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 - 2026-09-06
+
+- Include the gallery logo in the published package.
+
 ## 0.1.0 - 2026-09-04
 
 - Add a top-level `/workflows` menu with separate **Edit project workflows** and **Invoke workflow** actions. Invocation lists valid global workflows, warns and omits invalid entries, inserts the selected Markdown source as a visible persisted custom message, and starts an agent turn without changing project configuration.

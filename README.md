@@ -1,5 +1,9 @@
 # pi-workflow
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arcanemachine/pi-workflow/main/logo.jpg" alt="Pi mascot selecting a workflow recipe from a catalog" width="250" />
+</p>
+
 A thin workflow-catalog extension for [Pi](https://pi.dev).
 
 `pi-workflow` lets users maintain a central project workflow list grouped by role, while keeping complete workflow guidance in global Markdown files. Agents use project metadata when a relevant configured project is known, use the global catalog for non-project work, recommend an appropriate workflow from bulk metadata, obtain explicit user approval, and then read only the selected workflow.

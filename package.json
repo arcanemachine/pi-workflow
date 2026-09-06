@@ -1,6 +1,6 @@
 {
   "name": "@arcanemachine/pi-workflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Project-scoped discovery and configuration for global Pi Markdown workflows",
   "type": "module",
   "keywords": [
@@ -14,7 +14,8 @@
   "pi": {
     "extensions": [
       "./src/index.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/arcanemachine/pi-workflow/main/logo.jpg"
   },
   "scripts": {
     "build": "tsc",
@@ -55,7 +56,8 @@
     "src",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE.md"
+    "LICENSE.md",
+    "logo.jpg"
   ],
   "repository": {
     "type": "git",
