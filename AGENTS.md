@@ -71,10 +71,10 @@ The exact tool and prompt behavior lives in the tool's shipped prompt guidelines
 For package changes, run:
 
 ```bash
+npm run format:check
 npm run typecheck
 npm run test
 npm run build
-npm run format
 npm pack --dry-run
 ```
 
